@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AET-specific
+output/*
+!output/README.md
+logs/*
+!logs/README.md
