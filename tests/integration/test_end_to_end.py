@@ -94,6 +94,25 @@ class RulePackPlugin(Plugin):
         return MinimumAssetsRule()
 
 
+def test_real_dxf_flow_with_default_wiring(dxf_file: Path):
+    """SDS-003: a real DXF file flows through the default service wiring."""
+    service = ApplicationService()
+    project = service.create_project("DXF Demo").payload
+    assert project is not None
+    assert service.import_drawing(project.project_id, dxf_file).success
+
+    processed = service.process_drawings(project.project_id)
+    assert processed.success
+    assert processed.payload is not None
+    assert processed.payload.succeeded
+
+    reported = service.generate_report(project.project_id)
+    assert reported.success
+    assert reported.payload is not None
+    _, artifacts = reported.payload
+    assert "Drawing snapshots: 1" in artifacts[0].content
+
+
 def test_dwg_to_report_flow_with_plugin_rule(tmp_path: Path):
     plugins = PluginRuntime()
     assert plugins.register(RulePackPlugin()).success

@@ -18,6 +18,7 @@ def test_register_input_produces_hashed_source(tmp_path: Path):
     assert source.project_id == project.project_id
     assert source.file_hash == hashlib.sha256(b"fake dwg content").hexdigest()
     assert source.provenance == f"filesystem:{drawing}"
+    assert source.file_format == "dwg"
     assert outcome.correlation_id == "cid-1"
 
 

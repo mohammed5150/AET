@@ -1,4 +1,4 @@
-"""Asset derivation module (SDS-002 §8.6)."""
+"""Asset derivation module (SDS-002 §8.6, SDS-004)."""
 
 from app.modules.asset_engine.engine import (
     AssetCollection,
@@ -6,10 +6,22 @@ from app.modules.asset_engine.engine import (
     AssetExtractor,
     NullAssetExtractor,
 )
+from app.modules.asset_engine.registry import (
+    RegistryColumnMap,
+    RegistryImport,
+    XlsxAssetRegistryReader,
+    classify_asset_type,
+    derive_circuit,
+)
 
 __all__ = [
     "AssetCollection",
     "AssetEngine",
     "AssetExtractor",
     "NullAssetExtractor",
+    "RegistryColumnMap",
+    "RegistryImport",
+    "XlsxAssetRegistryReader",
+    "classify_asset_type",
+    "derive_circuit",
 ]

@@ -16,7 +16,8 @@ from app.core.outcome import Outcome
 from app.core.plugins import PluginCategory, PluginRuntime
 from app.models.project import Project, SourceInput
 from app.models.report import Report, ReportArtifact, ReportRequest
-from app.modules.asset_engine import AssetEngine
+from app.modules.asset_engine import AssetEngine, XlsxAssetRegistryReader
+from app.modules.asset_engine.registry import RegistryImport
 from app.modules.drawing_engine import DrawingEngine
 from app.modules.ingestion import IngestionEngine
 from app.modules.reporting_engine import (
@@ -62,6 +63,8 @@ class ApplicationService:
         self._plugins = plugins or PluginRuntime()
         self._logger = logger or get_logger("application")
         self._pipeline = ProcessingPipeline(self._logger)
+        for registered in self._plugins.extensions(PluginCategory.DRAWING_INTERPRETER):
+            self._drawing.registry.register_extension(registered.extension)
 
     # -- use case: create project -----------------------------------------
 
@@ -159,8 +162,62 @@ class ApplicationService:
                 error_code=failure.error_code,
                 message=failure.message,
                 correlation_id=correlation_id,
+                remediation=failure.remediation,
             )
         return Outcome.ok(result, correlation_id=correlation_id)
+
+    # -- use case: import asset registry (SDS-004) -------------------------
+
+    def import_asset_registry(
+        self,
+        project_id: str,
+        path: Path,
+        reader: XlsxAssetRegistryReader | None = None,
+    ) -> Outcome[RegistryImport]:
+        correlation_id = new_id()
+        project = self._repos.projects.get(project_id)
+        if project is None:
+            return self._unknown_project(project_id, correlation_id)
+        registered = self._ingestion.register_input(
+            project, path, correlation_id=correlation_id
+        )
+        if not registered.success or registered.payload is None:
+            return Outcome.fail(
+                registered.error_code or InputError.code,
+                registered.message,
+                correlation_id=correlation_id,
+                remediation=registered.remediation,
+            )
+        source = registered.payload
+        try:
+            result = (reader or XlsxAssetRegistryReader()).read(source)
+        except InputError as error:
+            self._logger.error(
+                str(error),
+                operation="import-asset-registry",
+                project_id=project_id,
+                correlation_id=correlation_id,
+                error_code=error.code,
+            )
+            return Outcome.from_error(error, correlation_id=correlation_id)
+        self._repos.sources.add(source)
+        for asset in result.assets:
+            self._repos.assets.add(asset)
+        self._logger.audit(
+            f"Asset registry imported: {len(result.assets)} asset(s), "
+            f"{result.skipped_rows} row(s) skipped",
+            operation="import-asset-registry",
+            project_id=project_id,
+            correlation_id=correlation_id,
+        )
+        return Outcome.ok(
+            result,
+            correlation_id=correlation_id,
+            message=(
+                f"{len(result.assets)} asset(s) imported, "
+                f"{result.skipped_rows} row(s) skipped"
+            ),
+        )
 
     # -- use case: validate project ---------------------------------------
 

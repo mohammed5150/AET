@@ -5,13 +5,11 @@ from pathlib import Path
 from app.services.use_cases import ApplicationService
 
 
-def _project_with_drawing(tmp_path: Path) -> tuple[ApplicationService, str]:
+def _project_with_drawing(dxf_file: Path) -> tuple[ApplicationService, str]:
     service = ApplicationService()
     project = service.create_project("Taxiway Kilo").payload
     assert project is not None
-    drawing = tmp_path / "kilo.dwg"
-    drawing.write_bytes(b"content")
-    assert service.import_drawing(project.project_id, drawing).success
+    assert service.import_drawing(project.project_id, dxf_file).success
     return service, project.project_id
 
 
@@ -45,8 +43,42 @@ def test_process_requires_imported_drawings():
     assert outcome.remediation
 
 
-def test_full_workflow_happy_path(tmp_path: Path):
-    service, project_id = _project_with_drawing(tmp_path)
+def test_import_asset_registry_persists_assets(tmp_path: Path):
+    from openpyxl import Workbook
+
+    registry = tmp_path / "assets.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["name", "assetClass", "mainArea"])
+    sheet.append(["TCC1-01/001", "ADB-BI-GG-S-INSET-8IN-2x40W", "ST"])
+    sheet.append(["HH.A.001", "AGL PIT", "AUX"])
+    workbook.save(registry)
+
+    service = ApplicationService()
+    project = service.create_project("Registry Demo").payload
+    assert project is not None
+    outcome = service.import_asset_registry(project.project_id, registry)
+    assert outcome.success
+    assert outcome.payload is not None
+    assert len(outcome.payload.assets) == 2
+
+    reported = service.generate_report(project.project_id)
+    assert reported.success and reported.payload is not None
+    content = reported.payload[1][0].content
+    assert "## Assets by Type" in content
+    assert "light-fitting: 1" in content
+    assert "agl-pit: 1" in content
+
+
+def test_import_asset_registry_unknown_project(tmp_path: Path):
+    service = ApplicationService()
+    outcome = service.import_asset_registry("nope", tmp_path / "assets.xlsx")
+    assert not outcome.success
+    assert outcome.error_code == "WORKFLOW_ERROR"
+
+
+def test_full_workflow_happy_path(dxf_file: Path):
+    service, project_id = _project_with_drawing(dxf_file)
 
     processed = service.process_drawings(project_id)
     assert processed.success

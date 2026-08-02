@@ -29,5 +29,6 @@ class SourceInput:
     file_hash: str
     file_version: int = 1
     provenance: str = ""
+    file_format: str = ""
     input_id: str = field(default_factory=new_id)
     imported_at: datetime = field(default_factory=utc_now)
