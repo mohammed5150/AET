@@ -41,6 +41,10 @@ DEFAULT_TYPE_RULES: tuple[tuple[str, str], ...] = (
     (r"Obstruction", "obstruction-light"),
     (r"^TRL", "traffic-light"),
     (r"^WDI$", "wdi"),
+    # Auxiliary crossing/access equipment tracked outside the core AGL
+    # taxonomy ("extra assets"): crossing barriers/controls (TRA), flasher
+    # control units (FCU), runway access equipment (RRS), LVO equipment.
+    (r"^(TRA|FCU|RRS|LVO)", "extra-asset"),
 )
 
 # Name-based fallback when the class column is unusable ("Generic", "*U",
@@ -53,6 +57,7 @@ FAMILY_TYPE_FALLBACK: tuple[tuple[str, str], ...] = (
     ("LIC", "light-fitting"),
     ("RCC", "light-fitting"),
     ("REC", "light-fitting"),
+    ("RGC", "light-fitting"),
     ("SGC", "sign"),
     ("HH", "agl-pit"),
 )

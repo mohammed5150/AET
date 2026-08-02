@@ -95,6 +95,7 @@ overridable by the caller):
 | contains `Obstruction` | `obstruction-light` |
 | starts with `TRL` | `traffic-light` |
 | equals `WDI` | `wdi` |
+| starts with `TRA`, `FCU`, `RRS`, or `LVO` (auxiliary crossing/access equipment) | `extra-asset` |
 | otherwise | name-based fallback (§5.3), else `other` |
 
 ### 5.2 Circuit derivation
@@ -114,14 +115,14 @@ from the name (§5.2) classifies the asset:
 
 | Family prefix | asset_type |
 | --- | --- |
-| `TCC`, `TEC`, `SBC`, `LIC`, `RCC`, `REC` | `light-fitting` |
+| `TCC`, `TEC`, `SBC`, `LIC`, `RCC`, `REC`, `RGC` | `light-fitting` |
 | `SGC` | `sign` |
 | `HH` | `agl-pit` |
 
 Assets that neither path classifies remain `other` and are surfaced by
-the SDS-005 `agl.asset.classification` rule. Known intentionally
-unclassified AUH classes pending a domain decision: `TRA`, `SG`-adjacent
-crossing equipment (`LVO*`, `RRS`), and `FCU_1`.
+the SDS-005 `agl.asset.classification` rule. Auxiliary crossing/access
+equipment (`TRA`, `FCU_1`, `RRS`, `LVO*`) is classified `extra-asset` —
+registry-tracked equipment outside the core AGL taxonomy.
 
 ## 6. Fault Tolerance and Error Handling
 
