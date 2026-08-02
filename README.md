@@ -29,6 +29,25 @@ output/               # Generated output (git-ignored)
 logs/                 # Log files (git-ignored)
 ```
 
+## Architecture
+
+The system architecture is defined in
+[SDS-002](docs/SDS/SDS-002-System-Architecture.md): a layered modular
+monolith with a pipeline-oriented processing core (ingestion → drawing
+interpretation → asset derivation → validation → reporting), structured
+outcomes and error boundaries, structured/audit logging, repository-based
+persistence, and a plugin runtime for importers, interpreters, extractors,
+validation rules, and report providers.
+
+How SDS-002 modules map onto this repository's layout is recorded in
+[ADR-001](docs/ADR/ADR-001-sds-002-package-mapping.md).
+
+Try the walking skeleton end to end:
+
+```bash
+aet run --name "Demo Project" path/to/drawing.dwg
+```
+
 ## Development Setup
 
 ```bash

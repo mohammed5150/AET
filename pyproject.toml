@@ -29,6 +29,9 @@ dev = [
     "pytest-cov",
 ]
 
+[project.scripts]
+aet = "app.ui.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 
