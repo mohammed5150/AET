@@ -30,6 +30,7 @@ from app.modules.validation_engine import (
     ValidationEngine,
     ValidationRule,
     ValidationRunResult,
+    standard_rules,
 )
 from app.services.persistence import Repositories, in_memory_repositories
 from app.services.pipeline import (
@@ -230,7 +231,8 @@ class ApplicationService:
         project = self._repos.projects.get(project_id)
         if project is None:
             return self._unknown_project(project_id, correlation_id)
-        all_rules = list(rules or [])
+        # SDS-005 §5: None -> standard pack; [] -> caller opts out.
+        all_rules = list(rules) if rules is not None else standard_rules()
         for registered in self._plugins.extensions(PluginCategory.VALIDATION_RULE):
             all_rules.append(registered.extension)  # type: ignore[arg-type]
         context = ValidationContext(

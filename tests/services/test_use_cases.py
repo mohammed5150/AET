@@ -77,6 +77,22 @@ def test_import_asset_registry_unknown_project(tmp_path: Path):
     assert outcome.error_code == "WORKFLOW_ERROR"
 
 
+def test_validate_default_runs_standard_pack(dxf_file: Path):
+    service, project_id = _project_with_drawing(dxf_file)
+    assert service.process_drawings(project_id).success
+
+    validated = service.validate_project(project_id)
+    assert validated.success and validated.payload is not None
+    rule_ids = {result.rule_id for result in validated.payload.results}
+    assert "agl.asset.location" in rule_ids
+    assert "agl.drawing.empty-layers" in rule_ids
+    assert len(validated.payload.results) == 5
+
+    opted_out = service.validate_project(project_id, rules=[])
+    assert opted_out.success and opted_out.payload is not None
+    assert opted_out.payload.results == []
+
+
 def test_full_workflow_happy_path(dxf_file: Path):
     service, project_id = _project_with_drawing(dxf_file)
 

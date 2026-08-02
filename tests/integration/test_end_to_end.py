@@ -138,7 +138,8 @@ def test_dwg_to_report_flow_with_plugin_rule(tmp_path: Path):
     stages = [str(record.stage) for record in processed.payload.records]
     assert stages == ["interpretation", "asset-derivation"]
 
-    validated = service.validate_project(project.project_id)
+    # rules=[] opts out of the SDS-005 standard pack, isolating plugin rules
+    validated = service.validate_project(project.project_id, rules=[])
     assert validated.success
     assert validated.payload is not None
     findings = validated.payload.results
