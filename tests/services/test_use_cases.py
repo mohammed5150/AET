@@ -43,6 +43,40 @@ def test_process_requires_imported_drawings():
     assert outcome.remediation
 
 
+def test_import_asset_registry_persists_assets(tmp_path: Path):
+    from openpyxl import Workbook
+
+    registry = tmp_path / "assets.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["name", "assetClass", "mainArea"])
+    sheet.append(["TCC1-01/001", "ADB-BI-GG-S-INSET-8IN-2x40W", "ST"])
+    sheet.append(["HH.A.001", "AGL PIT", "AUX"])
+    workbook.save(registry)
+
+    service = ApplicationService()
+    project = service.create_project("Registry Demo").payload
+    assert project is not None
+    outcome = service.import_asset_registry(project.project_id, registry)
+    assert outcome.success
+    assert outcome.payload is not None
+    assert len(outcome.payload.assets) == 2
+
+    reported = service.generate_report(project.project_id)
+    assert reported.success and reported.payload is not None
+    content = reported.payload[1][0].content
+    assert "## Assets by Type" in content
+    assert "light-fitting: 1" in content
+    assert "agl-pit: 1" in content
+
+
+def test_import_asset_registry_unknown_project(tmp_path: Path):
+    service = ApplicationService()
+    outcome = service.import_asset_registry("nope", tmp_path / "assets.xlsx")
+    assert not outcome.success
+    assert outcome.error_code == "WORKFLOW_ERROR"
+
+
 def test_full_workflow_happy_path(dxf_file: Path):
     service, project_id = _project_with_drawing(dxf_file)
 
