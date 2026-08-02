@@ -14,11 +14,17 @@ from app.utils.ids import new_id, utc_now
 
 @dataclass(slots=True)
 class DrawingEntity:
-    """A normalized drawing entity with a geometry reference."""
+    """A normalized drawing entity with geometry and source provenance.
+
+    ``geometry`` holds the numeric payload per SDS-003 §5.1 (points are
+    ``[x, y]`` pairs in drawing units); ``geometry_ref`` preserves the
+    source entity handle from the original drawing file.
+    """
 
     entity_type: str
     layer: str
     attributes: dict[str, str] = field(default_factory=dict)
+    geometry: dict[str, object] = field(default_factory=dict)
     geometry_ref: str | None = None
     entity_id: str = field(default_factory=new_id)
 

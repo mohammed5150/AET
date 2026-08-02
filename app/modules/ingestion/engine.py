@@ -89,6 +89,7 @@ class IngestionEngine:
             path=info.path,
             file_hash=info.file_hash,
             provenance=f"filesystem:{info.path}",
+            file_format=path.suffix.lower().lstrip("."),
         )
         self._logger.audit(
             "Source input registered",
