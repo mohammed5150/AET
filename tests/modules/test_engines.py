@@ -6,7 +6,7 @@ from app.models.project import Project, SourceInput
 from app.models.report import ReportRequest
 from app.models.validation import RunStatus, Severity, ValidationResult
 from app.modules.asset_engine import AssetCollection, AssetEngine
-from app.modules.drawing_engine import DrawingEngine
+from app.modules.drawing_engine import DrawingEngine, PassthroughInterpreter
 from app.modules.reporting_engine import MarkdownFormatter, ReportingEngine
 from app.modules.validation_engine import ValidationContext, ValidationEngine
 
@@ -15,9 +15,10 @@ def _source() -> SourceInput:
     return SourceInput(project_id="p1", path="/data/apron.dwg", file_hash="h")
 
 
-def test_drawing_engine_normalizes_with_provenance():
+def test_explicit_interpreter_bypasses_format_selection():
     source = _source()
-    outcome = DrawingEngine().normalize(source, correlation_id="cid-1")
+    engine = DrawingEngine(interpreter=PassthroughInterpreter())
+    outcome = engine.normalize(source, correlation_id="cid-1")
     assert outcome.success
     snapshot = outcome.payload
     assert snapshot is not None

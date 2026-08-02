@@ -5,13 +5,11 @@ from pathlib import Path
 from app.services.use_cases import ApplicationService
 
 
-def _project_with_drawing(tmp_path: Path) -> tuple[ApplicationService, str]:
+def _project_with_drawing(dxf_file: Path) -> tuple[ApplicationService, str]:
     service = ApplicationService()
     project = service.create_project("Taxiway Kilo").payload
     assert project is not None
-    drawing = tmp_path / "kilo.dwg"
-    drawing.write_bytes(b"content")
-    assert service.import_drawing(project.project_id, drawing).success
+    assert service.import_drawing(project.project_id, dxf_file).success
     return service, project.project_id
 
 
@@ -45,8 +43,8 @@ def test_process_requires_imported_drawings():
     assert outcome.remediation
 
 
-def test_full_workflow_happy_path(tmp_path: Path):
-    service, project_id = _project_with_drawing(tmp_path)
+def test_full_workflow_happy_path(dxf_file: Path):
+    service, project_id = _project_with_drawing(dxf_file)
 
     processed = service.process_drawings(project_id)
     assert processed.success
