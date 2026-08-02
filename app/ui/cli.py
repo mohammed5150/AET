@@ -51,6 +51,15 @@ def _run(args: argparse.Namespace) -> int:
     for record in processed.payload.records:
         print(f"Stage {record.stage}: {record.status}")
 
+    if args.assets is not None:
+        imported_assets = service.import_asset_registry(
+            project.project_id, Path(args.assets)
+        )
+        if not imported_assets.success:
+            _print_failure(imported_assets)
+            return 1
+        print(f"Asset registry: {imported_assets.message}")
+
     validated = service.validate_project(project.project_id)
     if not validated.success or validated.payload is None:
         _print_failure(validated)
@@ -81,6 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("files", nargs="+", help="Source drawing files")
     run_parser.add_argument("--name", default="Untitled Project", help="Project name")
+    run_parser.add_argument(
+        "--assets",
+        default=None,
+        help="Asset registry .xlsx to import after drawing processing",
+    )
     run_parser.set_defaults(handler=_run)
 
     version_parser = subparsers.add_parser("version", help="Show the AET version")

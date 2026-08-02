@@ -42,6 +42,7 @@ class ReportView:
     source_count: int
     snapshot_count: int
     asset_count: int
+    assets_by_type: dict[str, int] = field(default_factory=dict)
     findings_by_severity: dict[str, int] = field(default_factory=dict)
     findings: list[FindingLine] = field(default_factory=list)
 
@@ -72,6 +73,12 @@ class MarkdownFormatter:
             f"- Validation findings: {len(view.findings)}",
             "",
         ]
+        if view.assets_by_type:
+            lines.append("## Assets by Type")
+            lines.append("")
+            for asset_type, count in sorted(view.assets_by_type.items()):
+                lines.append(f"- {asset_type}: {count}")
+            lines.append("")
         if view.findings_by_severity:
             lines.append("## Findings by Severity")
             lines.append("")
@@ -117,6 +124,7 @@ class ReportingEngine:
             source_count=len(sources),
             snapshot_count=len(snapshots),
             asset_count=len(assets),
+            assets_by_type=dict(Counter(asset.asset_type for asset in assets)),
             findings_by_severity=dict(severity_counts),
             findings=[
                 FindingLine(
