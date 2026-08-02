@@ -166,16 +166,50 @@ def test_custom_column_map(tmp_path: Path):
         ("AGL PIT", "agl-pit"),
         ("CCH-OMNI-B-INSET-8IN-48W", "light-fitting"),
         ("ADB-UNI-C-ELEV-150W", "light-fitting"),
+        ("TWE-in", "light-fitting"),
+        ("STB-in2", "light-fitting"),
+        ("TCL-s_gg", "light-fitting"),
+        ("LIL_yy_C", "light-fitting"),
+        ("RGL", "light-fitting"),
+        ("STL", "light-fitting"),
         ("SGN", "sign"),
+        ("SG", "sign"),
         ("RRM", "rrm"),
         ("ADB_NBASE", "base"),
         ("Base-8", "base"),
+        ("CRBLK", "base"),
         ("Lightpoles", "lightpole"),
+        ("CCR-CRE-30KVA", "ccr"),
+        ("CCR-CCH-7.5KVA", "ccr"),
+        ("High Mast Light", "high-mast"),
+        ("Highway Streetlight", "streetlight"),
+        ("Apron Stand", "apron-floodlight"),
+        ("Halogen Obstruction Lamp", "obstruction-light"),
+        ("LED Obstruction Lamp", "obstruction-light"),
+        ("TRL_ rg", "traffic-light"),
+        ("WDI", "wdi"),
         ("Mystery Thing", "other"),
     ],
 )
 def test_classification_rules(asset_class: str, expected: str):
     assert classify_asset_type(asset_class) == expected
+
+
+@pytest.mark.parametrize(
+    ("asset_class", "name", "expected"),
+    [
+        ("Generic", "TCCPA1.02.019", "light-fitting"),
+        ("*U", "TECPA2.01.057", "light-fitting"),
+        ("Generic", "SGC13L.02.077", "sign"),
+        ("Generic", "HH.E4.001", "agl-pit"),
+        ("Generic", "XYZ.1", "other"),
+        ("Generic", "", "other"),
+        # Class rules always win over the name fallback
+        ("AGL PIT", "TCC1.1", "agl-pit"),
+    ],
+)
+def test_name_based_fallback(asset_class: str, name: str, expected: str):
+    assert classify_asset_type(asset_class, name=name) == expected
 
 
 @pytest.mark.parametrize(

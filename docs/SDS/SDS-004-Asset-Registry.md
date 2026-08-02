@@ -1,5 +1,11 @@
 # SDS-004 – Asset Engine: Asset Registry Import
 
+> **Revision A** — §5.1 extended and §5.3 added after SDS-005 validation
+> flagged 2,215 unclassified assets in the AUH export. Classification now
+> covers fitting shorthands, CCRs, mast/flood lighting, obstruction and
+> traffic lights, and falls back to circuit-family evidence in the asset
+> name when the class column is unusable.
+
 ## 1. Purpose
 
 This document specifies the first functional increment of the **Asset
@@ -75,11 +81,21 @@ overridable by the caller):
 | --- | --- |
 | equals `AGL PIT` | `agl-pit` |
 | contains `INSET` or `ELEV` | `light-fitting` |
-| starts with `SGN` | `sign` |
+| starts with `TWE-in` or `STB-in` (edge / stop-bar shorthand) | `light-fitting` |
+| starts with `TCL-` or `LIL_` (centreline / lead-in shorthand) | `light-fitting` |
+| equals `RGL` or `STL` | `light-fitting` |
+| starts with `SGN`, or equals `SG` | `sign` |
 | starts with `RRM` | `rrm` |
-| contains `NBASE`, `EBASE`, or starts with `Base` | `base` |
+| contains `NBASE`/`EBASE`, or starts with `Base`/`CRBLK` | `base` |
 | equals `Lightpoles` | `lightpole` |
-| otherwise | `other` |
+| starts with `CCR-` | `ccr` |
+| starts with `High Mast` | `high-mast` |
+| contains `Streetlight` | `streetlight` |
+| equals `Apron Stand` (stand floodlight arrays) | `apron-floodlight` |
+| contains `Obstruction` | `obstruction-light` |
+| starts with `TRL` | `traffic-light` |
+| equals `WDI` | `wdi` |
+| otherwise | name-based fallback (§5.3), else `other` |
 
 ### 5.2 Circuit derivation
 
@@ -88,6 +104,24 @@ is parsed as `<FAMILY><DESIGNATOR>` where FAMILY is the leading run of
 letters (e.g. `TCC102` → family `TCC`, circuit `TCC102`; `SBC13L` →
 family `SBC`, circuit `SBC13L`; `HH` → family `HH`, no designator). When
 the prefix contains no letters, no circuit attributes are set.
+
+### 5.3 Name-based classification fallback
+
+Registry exports contain rows whose class column is unusable (`Generic`,
+`*U`, damaged text) while the asset name still follows the circuit naming
+grammar. When class-based rules yield no match, the circuit family parsed
+from the name (§5.2) classifies the asset:
+
+| Family prefix | asset_type |
+| --- | --- |
+| `TCC`, `TEC`, `SBC`, `LIC`, `RCC`, `REC` | `light-fitting` |
+| `SGC` | `sign` |
+| `HH` | `agl-pit` |
+
+Assets that neither path classifies remain `other` and are surfaced by
+the SDS-005 `agl.asset.classification` rule. Known intentionally
+unclassified AUH classes pending a domain decision: `TRA`, `SG`-adjacent
+crossing equipment (`LVO*`, `RRS`), and `FCU_1`.
 
 ## 6. Fault Tolerance and Error Handling
 
