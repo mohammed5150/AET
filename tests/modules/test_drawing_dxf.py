@@ -106,13 +106,22 @@ def test_corrupt_dxf_fails_with_input_error(tmp_path: Path):
     assert outcome.remediation
 
 
-def test_dwg_is_rejected_with_conversion_hint(tmp_path: Path):
+def test_dwg_without_backend_fails_with_conversion_hint(tmp_path: Path):
+    from app.modules.drawing_engine import (
+        DwgConversionInterpreter,
+        InterpreterRegistry,
+    )
+
     path = tmp_path / "apron.dwg"
     path.write_bytes(b"binary dwg content")
-    outcome = DrawingEngine().normalize(_source_for(path), correlation_id="c3")
+    registry = InterpreterRegistry()
+    registry.register("dxf", DxfInterpreter())
+    registry.register("dwg", DwgConversionInterpreter(converters=[]))
+    engine = DrawingEngine(registry=registry)
+    outcome = engine.normalize(_source_for(path), correlation_id="c3")
     assert not outcome.success
     assert outcome.error_code == "INPUT_ERROR"
-    assert "Convert the DWG file to DXF" in (outcome.remediation or "")
+    assert "convert the file to DXF manually" in (outcome.remediation or "")
 
 
 def test_unknown_format_lists_supported_formats(tmp_path: Path):
