@@ -24,10 +24,37 @@ _CIRCUIT_PREFIX = re.compile(r"^([A-Za-z]+)")
 DEFAULT_TYPE_RULES: tuple[tuple[str, str], ...] = (
     (r"^AGL PIT$", "agl-pit"),
     (r"INSET|ELEV", "light-fitting"),
-    (r"^SGN", "sign"),
+    # Fitting shorthands without an INSET/ELEV token (SDS-004 §5.1 rev. A):
+    # taxiway edge, stop bar, taxiway centreline, lead-in, runway guard.
+    (r"^(TWE|STB)-in", "light-fitting"),
+    (r"^TCL-", "light-fitting"),
+    (r"^LIL_", "light-fitting"),
+    (r"^(RGL|STL)$", "light-fitting"),
+    (r"^SGN|^SG$", "sign"),
     (r"^RRM", "rrm"),
-    (r"NBASE|EBASE|^Base", "base"),
+    (r"NBASE|EBASE|^Base|^CRBLK", "base"),
     (r"^Lightpoles$", "lightpole"),
+    (r"^CCR-", "ccr"),
+    (r"^High Mast", "high-mast"),
+    (r"Streetlight", "streetlight"),
+    (r"^Apron Stand$", "apron-floodlight"),
+    (r"Obstruction", "obstruction-light"),
+    (r"^TRL", "traffic-light"),
+    (r"^WDI$", "wdi"),
+)
+
+# Name-based fallback when the class column is unusable ("Generic", "*U",
+# damaged exports): the circuit family embedded in the asset name still
+# identifies what the asset is (SDS-004 §5.3).
+FAMILY_TYPE_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("TCC", "light-fitting"),
+    ("TEC", "light-fitting"),
+    ("SBC", "light-fitting"),
+    ("LIC", "light-fitting"),
+    ("RCC", "light-fitting"),
+    ("REC", "light-fitting"),
+    ("SGC", "sign"),
+    ("HH", "agl-pit"),
 )
 
 _PASSTHROUGH_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -68,11 +95,21 @@ class RegistryImport:
 def classify_asset_type(
     asset_class: str,
     rules: tuple[tuple[str, str], ...] = DEFAULT_TYPE_RULES,
+    name: str = "",
 ) -> str:
-    """Map an assetClass value to an asset type (SDS-004 §5.1)."""
+    """Map an assetClass value to an asset type (SDS-004 §5.1, §5.3).
+
+    When class-based rules yield no match and a ``name`` is given, the
+    circuit family parsed from the name is tried as a fallback.
+    """
     for pattern, asset_type in rules:
         if re.search(pattern, asset_class, flags=re.IGNORECASE):
             return asset_type
+    if name:
+        family = derive_circuit(name).get("circuit_family", "")
+        for prefix, asset_type in FAMILY_TYPE_FALLBACK:
+            if family.startswith(prefix):
+                return asset_type
     return "other"
 
 
@@ -201,7 +238,9 @@ class XlsxAssetRegistryReader:
                 Asset(
                     project_id=source.project_id,
                     snapshot_id="",
-                    asset_type=classify_asset_type(asset_class, self._type_rules),
+                    asset_type=classify_asset_type(
+                        asset_class, self._type_rules, name=name
+                    ),
                     name=name,
                     location=location,
                     attributes=attributes,
