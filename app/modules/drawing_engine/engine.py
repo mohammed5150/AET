@@ -1,19 +1,27 @@
-"""Drawing interpretation and normalization (SDS-002 §8.5).
+"""Drawing interpretation and normalization (SDS-002 §8.5, SDS-003).
 
 Format-specific interpretation rules live behind the
 :class:`DrawingInterpreter` contract (also the extension point for
 drawing-interpreter plugins) so they stay isolated from asset logic.
+Interpreters are selected per source format from an
+:class:`~app.modules.drawing_engine.registry.InterpreterRegistry` unless one
+is injected explicitly (SDS-003 §4).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Protocol
 
-from app.core.errors import AETError, ProcessingError
+from app.core.errors import AETError, InputError, ProcessingError
 from app.core.logging import StructuredLogger, get_logger
 from app.core.outcome import Outcome
 from app.models.drawing import DrawingSnapshot
 from app.models.project import SourceInput
+from app.modules.drawing_engine.registry import (
+    InterpreterRegistry,
+    default_registry,
+)
 
 STAGE_NAME = "interpretation"
 
@@ -27,11 +35,11 @@ class DrawingInterpreter(Protocol):
 
 
 class PassthroughInterpreter:
-    """Placeholder normalization strategy.
+    """Format-agnostic strategy producing an empty provenance snapshot.
 
-    SDS-002 keeps concrete interpretation algorithms out of scope, so the
-    default interpreter produces an empty normalized snapshot that carries
-    source provenance for traceability.
+    Retained for tests and callers that need interpretation without a real
+    format backend; not registered for any format (SDS-003 supersedes it as
+    the default).
     """
 
     def interpret(self, source: SourceInput) -> DrawingSnapshot:
@@ -53,10 +61,17 @@ class DrawingEngine:
     def __init__(
         self,
         interpreter: DrawingInterpreter | None = None,
+        registry: InterpreterRegistry | None = None,
         logger: StructuredLogger | None = None,
     ) -> None:
-        self._interpreter = interpreter or PassthroughInterpreter()
+        self._interpreter = interpreter
+        self._registry = registry if registry is not None else default_registry()
         self._logger = logger or get_logger("drawing-engine")
+
+    @property
+    def registry(self) -> InterpreterRegistry:
+        """Registry used for format-based interpreter selection."""
+        return self._registry
 
     def normalize(
         self,
@@ -65,8 +80,13 @@ class DrawingEngine:
         correlation_id: str | None = None,
     ) -> Outcome[DrawingSnapshot]:
         """Produce a normalized snapshot for one registered source input."""
+        interpreter = self._interpreter or self._select(source)
+        if interpreter is None:
+            error = self._unsupported_format(source)
+            self._log_failure(error.code, str(error), source, correlation_id)
+            return Outcome.from_error(error, correlation_id=correlation_id)
         try:
-            snapshot = self._interpreter.interpret(source)
+            snapshot = interpreter.interpret(source)
         except AETError as error:
             self._log_failure(error.code, str(error), source, correlation_id)
             return Outcome.from_error(error, correlation_id=correlation_id)
@@ -83,6 +103,24 @@ class DrawingEngine:
             correlation_id=correlation_id,
         )
         return Outcome.ok(snapshot, correlation_id=correlation_id)
+
+    def _select(self, source: SourceInput) -> DrawingInterpreter | None:
+        return self._registry.lookup(self._format_of(source))
+
+    def _unsupported_format(self, source: SourceInput) -> InputError:
+        format_id = self._format_of(source) or "unknown"
+        if format_id == "dwg":
+            remediation = "Convert the DWG file to DXF and re-import it."
+        else:
+            supported = ", ".join(self._registry.formats()) or "none"
+            remediation = f"Supported formats: {supported}."
+        return InputError(
+            f"No interpreter registered for format '{format_id}' " f"({source.path})",
+            remediation=remediation,
+        )
+
+    def _format_of(self, source: SourceInput) -> str:
+        return source.file_format or Path(source.path).suffix.lower().lstrip(".")
 
     def _log_failure(
         self,

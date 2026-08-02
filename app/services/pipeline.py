@@ -52,6 +52,7 @@ class StageRecord:
     completed_at: datetime | None = None
     error_code: str | None = None
     message: str = ""
+    remediation: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +105,7 @@ class ProcessingPipeline:
             else:
                 record.status = StageStatus.FAILED
                 record.error_code = outcome.error_code
+                record.remediation = outcome.remediation
                 failed = True
             self._logger.audit(
                 f"Stage {stage} {record.status}",

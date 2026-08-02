@@ -62,6 +62,8 @@ class ApplicationService:
         self._plugins = plugins or PluginRuntime()
         self._logger = logger or get_logger("application")
         self._pipeline = ProcessingPipeline(self._logger)
+        for registered in self._plugins.extensions(PluginCategory.DRAWING_INTERPRETER):
+            self._drawing.registry.register_extension(registered.extension)
 
     # -- use case: create project -----------------------------------------
 
@@ -159,6 +161,7 @@ class ApplicationService:
                 error_code=failure.error_code,
                 message=failure.message,
                 correlation_id=correlation_id,
+                remediation=failure.remediation,
             )
         return Outcome.ok(result, correlation_id=correlation_id)
 
