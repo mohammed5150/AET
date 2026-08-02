@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.modules.drawing_engine.dwg import DwgConversionInterpreter
 from app.modules.drawing_engine.dxf import DxfInterpreter
 
 if TYPE_CHECKING:
@@ -45,4 +46,5 @@ def default_registry() -> InterpreterRegistry:
     """Registry seeded with the built-in interpreters."""
     registry = InterpreterRegistry()
     registry.register("dxf", DxfInterpreter())
+    registry.register("dwg", DwgConversionInterpreter())
     return registry
