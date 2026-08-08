@@ -18,8 +18,8 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
-# Install development dependencies
-pip install -r requirements.txt
+# Install the package and development dependencies. The editable install
+# is required: the src/ layout means a bare checkout has no importable copy.
 pip install -e ".[dev]"
 ```
 
@@ -29,13 +29,15 @@ This project uses:
 
 - **Black** for code formatting (line length: 88)
 - **Ruff** for linting
-- **Python 3.12** as the minimum supported version
+- **mypy** in `strict` mode for type checking
+- **Python 3.12** as the minimum supported version (3.13 is also tested)
 
-Run formatting and linting before submitting:
+Run formatting, linting, and type checking before submitting:
 
 ```bash
 black .
 ruff check .
+mypy
 ```
 
 ## Testing
