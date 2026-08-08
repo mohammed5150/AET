@@ -53,24 +53,55 @@ class InMemoryRepository[T]:
         return list(self._items.values())
 
 
+class AuditTrail(Protocol):
+    """Append-only record of significant processing actions (§9.2.7)."""
+
+    def record(self, event: dict[str, str]) -> None: ...
+
+    def events(self) -> list[dict[str, str]]: ...
+
+
+class InMemoryAuditTrail:
+    """List-backed audit trail."""
+
+    def __init__(self) -> None:
+        self._events: list[dict[str, str]] = []
+
+    def record(self, event: dict[str, str]) -> None:
+        self._events.append(dict(event))
+
+    def events(self) -> list[dict[str, str]]:
+        return list(self._events)
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
-    """Bundle of repositories covering the SDS-002 §9.2 data domains."""
+    """Bundle of repositories covering the SDS-002 §9.2 data domains.
 
-    projects: InMemoryRepository[Project]
-    sources: InMemoryRepository[SourceInput]
-    snapshots: InMemoryRepository[DrawingSnapshot]
-    assets: InMemoryRepository[Asset]
-    relations: InMemoryRepository[AssetRelation]
-    validation_runs: InMemoryRepository[ValidationRun]
-    validation_results: InMemoryRepository[ValidationResult]
-    reports: InMemoryRepository[Report]
-    report_artifacts: InMemoryRepository[ReportArtifact]
-    audit_events: list[dict[str, str]] = field(default_factory=list)
+    Typed to the :class:`Repository` protocol, not to a concrete store, so a
+    SQLite-backed bundle substitutes for an in-memory one without anything
+    above this boundary changing (SDS-002 §9.5).
+    """
+
+    projects: Repository[Project]
+    sources: Repository[SourceInput]
+    snapshots: Repository[DrawingSnapshot]
+    assets: Repository[Asset]
+    relations: Repository[AssetRelation]
+    validation_runs: Repository[ValidationRun]
+    validation_results: Repository[ValidationResult]
+    reports: Repository[Report]
+    report_artifacts: Repository[ReportArtifact]
+    audit: AuditTrail = field(default_factory=InMemoryAuditTrail)
+
+    @property
+    def audit_events(self) -> list[dict[str, str]]:
+        """Audit records recorded so far (SDS-002 §9.2.7)."""
+        return self.audit.events()
 
     def record_audit_event(self, event: dict[str, str]) -> None:
         """Append an audit record (SDS-002 §9.2.7)."""
-        self.audit_events.append(dict(event))
+        self.audit.record(event)
 
 
 class RepositoryAuditSink(logging.Handler):

@@ -27,6 +27,9 @@ class AppConfig:
 
     data_dir: Path = Path("output")
     log_dir: Path = Path("logs")
+    #: SQLite file backing the repositories. ``None`` keeps everything in
+    #: memory, so a run derives nothing it can hand to the next one.
+    database: Path | None = None
     plugin_dirs: tuple[Path, ...] = ()
     log_level: str = "INFO"
     plugin_api_version: str = PLUGIN_API_VERSION
@@ -64,6 +67,8 @@ class AppConfig:
             values["data_dir"] = Path(raw)
         if raw := env.get(f"{ENV_PREFIX}LOG_DIR"):
             values["log_dir"] = Path(raw)
+        if raw := env.get(f"{ENV_PREFIX}DATABASE"):
+            values["database"] = Path(raw)
         if raw := env.get(f"{ENV_PREFIX}LOG_LEVEL"):
             values["log_level"] = raw.strip().upper()
         if raw := env.get(f"{ENV_PREFIX}PLUGIN_DIRS"):
