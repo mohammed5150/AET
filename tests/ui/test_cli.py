@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from aet.core.logging import AUDIT_LOG_FILE, DIAGNOSTIC_LOG_FILE
 from aet.ui.cli import build_service, main, resolve_config
 
@@ -201,3 +203,160 @@ def test_a_command_needing_no_store_ignores_an_unusable_database(
     )
     assert exit_code == 0
     assert capsys.readouterr().out.startswith("aet ")
+
+
+# -- SDS-015: stateful subcommands ------------------------------------------
+
+
+def _db(tmp_path: Path) -> list[str]:
+    return ["--log-dir", str(tmp_path / "lg"), "--database", str(tmp_path / "aet.db")]
+
+
+def _registry(path: Path) -> Path:
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Assets"
+    sheet.append(["name", "assetClass", "mainArea", "utmZone", "utmE", "utmN"])
+    sheet.append(["TCC1-01/001", "ADB-BI-GG-S-INSET-8IN-2x40W", "ST", "40 N", 1.0, 2.0])
+    workbook.save(path)
+    return path
+
+
+def test_the_whole_workflow_runs_across_separate_invocations(
+    dxf_file: Path, tmp_path: Path, capsys
+):
+    # Each main() call is a fresh service reading only what the last one wrote.
+    assert main([*_db(tmp_path), "project", "create", "Taxiway Kilo"]) == 0
+    assert "Taxiway Kilo" in capsys.readouterr().out
+
+    assert main([*_db(tmp_path), "import", "Taxiway Kilo", str(dxf_file)]) == 0
+    assert "Imported drawing" in capsys.readouterr().out
+
+    assert main([*_db(tmp_path), "process", "Taxiway Kilo"]) == 0
+    assert "Stage interpretation: succeeded" in capsys.readouterr().out
+
+    assert main([*_db(tmp_path), "project", "list"]) == 0
+    assert "Taxiway Kilo" in capsys.readouterr().out
+
+    assert main([*_db(tmp_path), "report", "Taxiway Kilo"]) == 0
+    assert "# Project Report: Taxiway Kilo" in capsys.readouterr().out
+
+
+def test_a_registry_workbook_is_not_interpreted_as_a_drawing(
+    dxf_file: Path, tmp_path: Path, capsys
+):
+    """Regression: `aet run` imported the registry after processing, so this
+    never surfaced until import and process became separate commands."""
+    registry = _registry(tmp_path / "assets.xlsx")
+    assert main([*_db(tmp_path), "project", "create", "Kilo"]) == 0
+    assert (
+        main(
+            [
+                *_db(tmp_path),
+                "import",
+                "Kilo",
+                str(dxf_file),
+                "--registry",
+                str(registry),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main([*_db(tmp_path), "process", "Kilo"]) == 0
+    captured = capsys.readouterr()
+    assert "Stage interpretation: succeeded" in captured.out
+    assert "xlsx" not in captured.err
+
+
+def test_a_project_with_only_a_registry_has_no_drawings_to_process(
+    tmp_path: Path, capsys
+):
+    registry = _registry(tmp_path / "assets.xlsx")
+    assert main([*_db(tmp_path), "project", "create", "Kilo"]) == 0
+    assert main([*_db(tmp_path), "import", "Kilo", "--registry", str(registry)]) == 0
+    capsys.readouterr()
+    assert main([*_db(tmp_path), "process", "Kilo"]) == 1
+    assert "no registered drawings" in capsys.readouterr().err
+
+
+# -- SDS-015 §4: a stateful command needs somewhere to keep state -----------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["project", "create", "Kilo"],
+        ["project", "list"],
+        ["import", "Kilo", "a.dxf"],
+        ["process", "Kilo"],
+        ["validate", "Kilo"],
+        ["report", "Kilo"],
+    ],
+)
+def test_stateful_commands_refuse_to_run_without_a_database(
+    argv: list[str], tmp_path: Path, capsys
+):
+    exit_code = main(["--log-dir", str(tmp_path / "lg"), *argv])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "needs a database" in captured.err
+    assert "--database" in captured.err
+
+
+def test_run_still_works_without_a_database(dxf_file: Path, tmp_path: Path):
+    # The one-shot pipeline keeps nothing, and says so in the hint above.
+    assert main(["--log-dir", str(tmp_path / "lg"), "run", str(dxf_file)]) == 0
+
+
+# -- SDS-015 §5: naming a project -------------------------------------------
+
+
+def test_a_project_is_addressable_by_identifier_or_name(
+    dxf_file: Path, tmp_path: Path, capsys
+):
+    assert main([*_db(tmp_path), "project", "create", "Taxiway Kilo"]) == 0
+    identifier = capsys.readouterr().out.split()[0]
+    assert main([*_db(tmp_path), "import", identifier, str(dxf_file)]) == 0
+    assert main([*_db(tmp_path), "import", "Taxiway Kilo", str(dxf_file)]) == 0
+
+
+def test_an_unknown_project_is_reported_with_a_hint(tmp_path: Path, capsys):
+    assert main([*_db(tmp_path), "process", "Nonexistent"]) == 1
+    captured = capsys.readouterr()
+    assert "No project matches 'Nonexistent'" in captured.err
+    assert "aet project list" in captured.err
+
+
+def test_an_ambiguous_name_is_reported_rather_than_resolved(tmp_path: Path, capsys):
+    # Names are not unique, so picking the first would silently act on the
+    # wrong project.
+    assert main([*_db(tmp_path), "project", "create", "Duplicate"]) == 0
+    assert main([*_db(tmp_path), "project", "create", "Duplicate"]) == 0
+    capsys.readouterr()
+    assert main([*_db(tmp_path), "process", "Duplicate"]) == 1
+    captured = capsys.readouterr()
+    assert "matches 2 projects" in captured.err
+    assert "Use the project identifier" in captured.err
+
+
+# -- SDS-015 §7: validate signals findings through its exit status ----------
+
+
+def test_validate_exits_two_when_a_rule_fails(dxf_file: Path, tmp_path: Path, capsys):
+    assert main([*_db(tmp_path), "project", "create", "Kilo"]) == 0
+    assert main([*_db(tmp_path), "import", "Kilo", str(dxf_file)]) == 0
+    assert main([*_db(tmp_path), "process", "Kilo"]) == 0
+    capsys.readouterr()
+    # The fixture drawing has an empty layer, so a rule fails.
+    assert main([*_db(tmp_path), "validate", "Kilo"]) == 2
+    assert "failed" in capsys.readouterr().out
+
+
+def test_validate_exits_zero_when_every_rule_passes(tmp_path: Path, capsys):
+    assert main([*_db(tmp_path), "project", "create", "Empty"]) == 0
+    capsys.readouterr()
+    assert main([*_db(tmp_path), "validate", "Empty"]) == 0

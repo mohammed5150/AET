@@ -13,7 +13,7 @@ from typing import Protocol
 from aet.core.errors import AETError, InputError
 from aet.core.logging import StructuredLogger, get_logger
 from aet.core.outcome import Outcome
-from aet.models.project import Project, SourceInput
+from aet.models.project import Project, SourceInput, SourceRole
 from aet.utils.hashing import sha256_file
 
 STAGE_NAME = "ingestion"
@@ -70,6 +70,7 @@ class IngestionEngine:
         project: Project,
         path: Path,
         *,
+        role: SourceRole = SourceRole.DRAWING,
         correlation_id: str | None = None,
     ) -> Outcome[SourceInput]:
         """Register one source file as a project input."""
@@ -88,6 +89,7 @@ class IngestionEngine:
             project_id=project.project_id,
             path=info.path,
             file_hash=info.file_hash,
+            role=role,
             provenance=f"filesystem:{info.path}",
             file_format=path.suffix.lower().lstrip("."),
         )
