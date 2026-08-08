@@ -48,6 +48,30 @@ Try the walking skeleton end to end:
 aet run --name "Demo Project" path/to/drawing.dwg
 ```
 
+## Configuration
+
+Settings resolve in layers, each overriding the one before it: built-in
+defaults, then environment variables, then CLI flags.
+
+| Setting | Environment variable | CLI flag | Default |
+| --- | --- | --- | --- |
+| Generated artifacts | `AET_DATA_DIR` | `--data-dir` | `output/` |
+| Log destination | `AET_LOG_DIR` | `--log-dir` | `logs/` |
+| Log verbosity | `AET_LOG_LEVEL` | `--log-level` | `INFO` |
+| Plugin search path | `AET_PLUGIN_DIRS` | — | none |
+
+`AET_PLUGIN_DIRS` holds an `os.pathsep`-separated list of directories.
+
+The CLI writes two structured JSON log streams into the log directory, kept
+separate per [SDS-002](docs/SDS/SDS-002-System-Architecture.md) §11.5:
+
+- `aet.log` — diagnostic records, also echoed to stderr
+- `audit.log` — the immutable audit trail of significant processing actions
+
+Library callers get no log sinks until they call `configure_logging`
+themselves; without it the standard library discards everything below
+WARNING.
+
 ## Development Setup
 
 ```bash
@@ -59,10 +83,18 @@ pip install -e ".[dev]"
 
 ## Tools
 
-- **Python 3.12**
+- **Python 3.12** — pinned in `.python-version`
 - **Black** — Code formatting
 - **Ruff** — Linting
 - **pytest** — Testing
+
+Every push to `main` and every pull request runs ruff, black, and the test
+suite via [GitHub Actions](.github/workflows/ci.yml). Run the same checks
+locally before pushing:
+
+```bash
+ruff check . && black --check . && pytest
+```
 
 ## License
 
