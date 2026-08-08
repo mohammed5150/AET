@@ -17,6 +17,7 @@ from openpyxl import load_workbook
 from app.core.errors import InputError
 from app.core.logging import StructuredLogger, get_logger
 from app.models.asset import Asset
+from app.models.geometry import parse_coordinate
 from app.models.project import SourceInput
 
 _CIRCUIT_PREFIX = re.compile(r"^([A-Za-z]+)")
@@ -230,15 +231,24 @@ class XlsxAssetRegistryReader:
                 if value := cell(row, column):
                     attributes[key] = value
             attributes.update(derive_circuit(name))
-            location = {
-                key: value
-                for key, value in (
-                    ("utm_zone", cell(row, columns.utm_zone)),
-                    ("utm_e", cell(row, columns.utm_e)),
-                    ("utm_n", cell(row, columns.utm_n)),
-                )
-                if value
-            }
+            raw_zone = cell(row, columns.utm_zone)
+            raw_easting = cell(row, columns.utm_e)
+            raw_northing = cell(row, columns.utm_n)
+            location = parse_coordinate(raw_easting, raw_northing, zone=raw_zone)
+            if location is None:
+                # Keep what the export actually said: an ordinate we cannot
+                # use must stay visible for correction, not vanish silently
+                # (SDS-009 §5.3).
+                if raw_zone:
+                    attributes["utm_zone"] = raw_zone
+                if raw_easting or raw_northing:
+                    attributes["utm_unparsed"] = f"{raw_easting}|{raw_northing}"
+                    self._logger.warn(
+                        f"Row {row_number} ({name}): unusable UTM ordinates "
+                        f"{raw_easting!r}/{raw_northing!r}",
+                        stage="asset-derivation",
+                        project_id=source.project_id,
+                    )
             assets.append(
                 Asset(
                     project_id=source.project_id,

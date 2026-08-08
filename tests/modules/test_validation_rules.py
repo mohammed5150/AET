@@ -2,6 +2,7 @@
 
 from app.models.asset import Asset
 from app.models.drawing import DrawingLayer, DrawingSnapshot
+from app.models.geometry import Coordinate
 from app.models.project import Project
 from app.models.validation import Severity
 from app.modules.validation_engine import ValidationContext, standard_rules
@@ -22,7 +23,7 @@ def _asset(name: str, asset_type: str = "light-fitting", located: bool = True):
         asset_type=asset_type,
         name=name,
         location=(
-            {"utm_zone": "40 N", "utm_e": "1.0", "utm_n": "2.0"} if located else {}
+            Coordinate(easting=1.0, northing=2.0, zone="40 N") if located else None
         ),
     )
 
