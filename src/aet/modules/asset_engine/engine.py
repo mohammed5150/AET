@@ -35,7 +35,12 @@ class AssetExtractor(Protocol):
 
 
 class NullAssetExtractor:
-    """Placeholder extractor until domain derivation rules are specified."""
+    """Extractor that derives nothing.
+
+    Retained for callers that need the pipeline to run without deriving —
+    tests, and pipelines whose assets come only from a registry import. The
+    default is now real derivation (SDS-010).
+    """
 
     def extract(self, snapshot: DrawingSnapshot) -> AssetCollection:
         return AssetCollection()
@@ -51,7 +56,11 @@ class AssetEngine:
         extractor: AssetExtractor | None = None,
         logger: StructuredLogger | None = None,
     ) -> None:
-        self._extractor = extractor or NullAssetExtractor()
+        # Imported here rather than at module scope: derivation imports
+        # AssetCollection from this module.
+        from aet.modules.asset_engine.derivation import DxfAssetExtractor
+
+        self._extractor = extractor or DxfAssetExtractor()
         self._logger = logger or get_logger("asset-engine")
 
     def derive(
