@@ -9,13 +9,25 @@ from aet.core.logging import AUDIT_LOG_FILE, DIAGNOSTIC_LOG_FILE
 from aet.ui.cli import build_service, main, resolve_config
 
 
-def test_run_command_executes_full_pipeline(dxf_file: Path, capsys):
+def test_run_command_writes_report_to_output(dxf_file: Path, capsys, monkeypatch):
+    monkeypatch.chdir(dxf_file.parent)
     exit_code = main(["run", "--name", "Apron North", str(dxf_file)])
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "Created project 'Apron North'" in captured.out
     assert "Stage interpretation: succeeded" in captured.out
+    assert "Report written: " in captured.out
+    written = dxf_file.parent / "output" / "apron-north" / "project-summary-v1.md"
+    assert written.is_file()
+    assert "# Project Report: Apron North" in written.read_text(encoding="utf-8")
+
+
+def test_run_command_no_save_prints_report(dxf_file: Path, capsys):
+    exit_code = main(["run", "--name", "Apron North", "--no-save", str(dxf_file)])
+    captured = capsys.readouterr()
+    assert exit_code == 0
     assert "# Project Report: Apron North" in captured.out
+    assert "Report written:" not in captured.out
 
 
 def test_run_command_fails_cleanly_on_unconvertible_dwg(tmp_path: Path, capsys):
