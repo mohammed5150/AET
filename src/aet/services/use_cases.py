@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from aet.core.config import AppConfig
+from aet.core.discovery import DiscoveryReport, discover_plugins
 from aet.core.errors import InfrastructureError, InputError, WorkflowError
 from aet.core.logging import StructuredLogger, get_logger
 from aet.core.outcome import Outcome
@@ -75,8 +76,20 @@ class ApplicationService:
         self._artifacts = artifact_store or FileArtifactStore()
         self._logger = logger or get_logger("application")
         self._pipeline = ProcessingPipeline(self._logger)
+        # Only searches directories an operator named; there is no default
+        # search path, because loading a plugin executes its code (SDS-014 §4).
+        self._discovery = (
+            discover_plugins(self._plugins)
+            if plugins is None and self._config.plugin_dirs
+            else DiscoveryReport()
+        )
         for registered in self._plugins.extensions(PluginCategory.DRAWING_INTERPRETER):
             self._drawing.registry.register_extension(registered.extension)
+
+    @property
+    def discovery(self) -> DiscoveryReport:
+        """What plugin discovery found and refused (SDS-014 §6)."""
+        return self._discovery
 
     @property
     def config(self) -> AppConfig:
