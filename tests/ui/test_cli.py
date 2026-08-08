@@ -100,3 +100,92 @@ def _parse(argv: list[str]):
     from aet.ui.cli import build_parser
 
     return build_parser().parse_args(argv)
+
+
+# -- SDS-013 §9.9: the store is selected by configuration -------------------
+
+
+def test_without_a_database_nothing_is_written(dxf_file: Path, tmp_path: Path):
+    assert main(["--log-dir", str(tmp_path / "lg"), "run", str(dxf_file)]) == 0
+    assert not list(tmp_path.glob("*.db"))
+
+
+def test_the_database_flag_persists_state_for_a_later_process(
+    dxf_file: Path, tmp_path: Path
+):
+    database = tmp_path / "aet.db"
+    exit_code = main(
+        [
+            "--log-dir",
+            str(tmp_path / "lg"),
+            "--database",
+            str(database),
+            "run",
+            "--name",
+            "Persisted",
+            str(dxf_file),
+        ]
+    )
+    assert exit_code == 0
+    assert database.exists()
+
+    # A fresh bundle stands in for the next invocation.
+    from aet.services.sqlite import connect, sqlite_repositories
+
+    repositories = sqlite_repositories(connect(database))
+    assert [p.name for p in repositories.projects.list()] == ["Persisted"]
+    assert repositories.snapshots.list()
+    assert repositories.reports.list()
+    assert repositories.audit_events
+
+
+def test_the_database_environment_variable_selects_the_store(
+    dxf_file: Path, tmp_path: Path, monkeypatch
+):
+    database = tmp_path / "from-env.db"
+    monkeypatch.setenv("AET_DATABASE", str(database))
+    assert resolve_config(_parse(["version"])).database == database
+    assert main(["--log-dir", str(tmp_path / "lg"), "run", str(dxf_file)]) == 0
+    assert database.exists()
+
+
+def test_an_unusable_database_path_is_reported_without_a_traceback(
+    dxf_file: Path, tmp_path: Path, capsys
+):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    exit_code = main(
+        [
+            "--log-dir",
+            str(tmp_path / "lg"),
+            "--database",
+            str(blocker / "x.db"),
+            "run",
+            str(dxf_file),
+        ]
+    )
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "error [INFRASTRUCTURE_ERROR]" in captured.err
+    assert "hint:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_a_command_needing_no_store_ignores_an_unusable_database(
+    tmp_path: Path, capsys
+):
+    # Opening the store lazily is deliberate: `version` has no use for it, so
+    # a bad path should not stop it reporting the version.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    exit_code = main(
+        [
+            "--log-dir",
+            str(tmp_path / "lg"),
+            "--database",
+            str(blocker / "x.db"),
+            "version",
+        ]
+    )
+    assert exit_code == 0
+    assert capsys.readouterr().out.startswith("aet ")

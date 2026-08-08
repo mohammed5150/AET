@@ -19,12 +19,19 @@ from aet.core.errors import AETError
 from aet.core.logging import LEVEL_NAMES, configure_logging
 from aet.core.outcome import Outcome
 from aet.services.persistence import attach_audit_sink
+from aet.services.sqlite import connect, sqlite_repositories
 from aet.services.use_cases import ApplicationService
 
 
 def build_service(config: AppConfig | None = None) -> ApplicationService:
-    """Wire the default application service and its audit store sink."""
-    service = ApplicationService(config=config or AppConfig.from_env())
+    """Wire the application service, its store, and its audit sink."""
+    resolved = config or AppConfig.from_env()
+    repositories = (
+        sqlite_repositories(connect(resolved.database))
+        if resolved.database is not None
+        else None
+    )
+    service = ApplicationService(repositories=repositories, config=resolved)
     attach_audit_sink(service.repositories)
     return service
 
@@ -35,6 +42,7 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
         log_level=args.log_level,
         log_dir=Path(args.log_dir) if args.log_dir else None,
         data_dir=Path(args.data_dir) if args.data_dir else None,
+        database=Path(args.database) if args.database else None,
     )
 
 
@@ -120,6 +128,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory for generated artifacts; overrides AET_DATA_DIR",
     )
+    parser.add_argument(
+        "--database",
+        default=None,
+        help=(
+            "SQLite file to persist project state in; overrides AET_DATABASE. "
+            "Without it nothing survives the run"
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser(
@@ -147,14 +163,17 @@ def _version(args: argparse.Namespace, config: AppConfig) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    handler: Callable[[argparse.Namespace, AppConfig], int] = args.handler
     try:
         config = resolve_config(args)
         configure_logging(config)
+        # The handler is inside the boundary too: opening the store is an
+        # expected failure, and a bad --database must read as an error with
+        # remediation, not as a traceback (SDS-002 §12.4).
+        return handler(args, config)
     except AETError as error:
         _print_error(error.code, str(error), error.remediation)
         return 1
-    handler: Callable[[argparse.Namespace, AppConfig], int] = args.handler
-    return handler(args, config)
 
 
 if __name__ == "__main__":
