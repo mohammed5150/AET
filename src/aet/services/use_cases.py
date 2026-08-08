@@ -27,6 +27,8 @@ from aet.modules.asset_engine.registry import RegistryImport
 from aet.modules.drawing_engine import DrawingEngine
 from aet.modules.ingestion import IngestionEngine
 from aet.modules.reporting_engine import (
+    ArtifactStore,
+    FileArtifactStore,
     MarkdownFormatter,
     ReportFormatter,
     ReportingEngine,
@@ -60,6 +62,7 @@ class ApplicationService:
         reporting: ReportingEngine | None = None,
         plugins: PluginRuntime | None = None,
         logger: StructuredLogger | None = None,
+        artifact_store: ArtifactStore | None = None,
         config: AppConfig | None = None,
     ) -> None:
         self._config = config or AppConfig()
@@ -70,6 +73,7 @@ class ApplicationService:
         self._validation = validation or ValidationEngine()
         self._reporting = reporting or ReportingEngine()
         self._plugins = plugins or PluginRuntime(config=self._config)
+        self._artifacts = artifact_store or FileArtifactStore()
         self._logger = logger or get_logger("application")
         self._pipeline = ProcessingPipeline(self._logger)
         # Only searches directories an operator named; there is no default
@@ -295,6 +299,7 @@ class ApplicationService:
         project_id: str,
         report_type: str = "project-summary",
         formatters: list[ReportFormatter] | None = None,
+        save: bool = True,
     ) -> Outcome[tuple[Report, list[ReportArtifact]]]:
         correlation_id = new_id()
         project = self._repos.projects.get(project_id)
@@ -324,6 +329,34 @@ class ApplicationService:
         )
         if outcome.success and outcome.payload is not None:
             report, artifacts = outcome.payload
+            # SDS-007 §4: next version for this project and report type.
+            report.version = 1 + sum(
+                1
+                for existing in self._repos.reports.list()
+                if existing.project_id == project_id
+                and existing.report_type == report_type
+            )
+            if save:
+                try:
+                    for artifact in artifacts:
+                        artifact.location = self._artifacts.save(
+                            project, report, artifact
+                        )
+                except InfrastructureError as error:
+                    self._logger.error(
+                        str(error),
+                        operation="generate-report",
+                        project_id=project_id,
+                        correlation_id=correlation_id,
+                        error_code=error.code,
+                    )
+                    return Outcome.from_error(error, correlation_id=correlation_id)
+                self._logger.audit(
+                    f"Persisted {len(artifacts)} report artifact(s)",
+                    operation="generate-report",
+                    project_id=project_id,
+                    correlation_id=correlation_id,
+                )
             self._repos.reports.add(report)
             for artifact in artifacts:
                 self._repos.report_artifacts.add(artifact)
