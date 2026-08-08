@@ -37,4 +37,5 @@ class ReportArtifact:
     report_id: str
     format_name: str
     content: str
+    location: str = ""
     artifact_id: str = field(default_factory=new_id)
