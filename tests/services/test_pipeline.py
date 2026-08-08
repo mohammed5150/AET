@@ -1,8 +1,8 @@
 """Tests for pipeline stage boundaries (SDS-002 §7.3, §12.4)."""
 
-from app.core.errors import InputError
-from app.core.outcome import Outcome
-from app.services.pipeline import (
+from aet.core.errors import InputError
+from aet.core.outcome import Outcome
+from aet.services.pipeline import (
     PipelineStage,
     ProcessingPipeline,
     StageStatus,

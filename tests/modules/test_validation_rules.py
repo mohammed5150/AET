@@ -1,12 +1,12 @@
 """Tests for the SDS-005 standard rule pack."""
 
-from app.models.asset import Asset
-from app.models.drawing import DrawingLayer, DrawingSnapshot
-from app.models.geometry import Coordinate
-from app.models.project import Project
-from app.models.validation import Severity
-from app.modules.validation_engine import ValidationContext, standard_rules
-from app.modules.validation_engine.rules import (
+from aet.models.asset import Asset
+from aet.models.drawing import DrawingLayer, DrawingSnapshot
+from aet.models.geometry import Coordinate
+from aet.models.project import Project
+from aet.models.validation import Severity
+from aet.modules.validation_engine import ValidationContext, standard_rules
+from aet.modules.validation_engine.rules import (
     SAMPLE_LIMIT,
     AssetClassificationRule,
     AssetLocationRule,
@@ -38,7 +38,8 @@ def _context(assets=(), snapshots=()):
 
 def test_location_rule_passes_and_fails():
     [passed] = AssetLocationRule().evaluate(_context([_asset("A.1")]))
-    assert passed.passed and passed.severity is Severity.INFO
+    assert passed.passed
+    assert passed.severity is Severity.INFO
 
     [failed] = AssetLocationRule().evaluate(
         _context([_asset("A.1"), _asset("B.1", located=False)])

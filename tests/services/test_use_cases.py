@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from app.core.config import AppConfig
-from app.models.asset import Asset, AssetRelation
-from app.models.geometry import Coordinate
-from app.services.use_cases import ApplicationService
+from aet.core.config import AppConfig
+from aet.models.asset import Asset, AssetRelation
+from aet.models.geometry import Coordinate
+from aet.services.use_cases import ApplicationService
 
 
 def _project_with_drawing(dxf_file: Path) -> tuple[ApplicationService, str]:
@@ -52,6 +52,7 @@ def test_import_asset_registry_persists_assets(tmp_path: Path):
     registry = tmp_path / "assets.xlsx"
     workbook = Workbook()
     sheet = workbook.active
+    assert sheet is not None
     sheet.append(["name", "assetClass", "mainArea"])
     sheet.append(["TCC1-01/001", "ADB-BI-GG-S-INSET-8IN-2x40W", "ST"])
     sheet.append(["HH.A.001", "AGL PIT", "AUX"])
@@ -66,7 +67,8 @@ def test_import_asset_registry_persists_assets(tmp_path: Path):
     assert len(outcome.payload.assets) == 2
 
     reported = service.generate_report(project.project_id)
-    assert reported.success and reported.payload is not None
+    assert reported.success
+    assert reported.payload is not None
     content = reported.payload[1][0].content
     assert "## Assets by Type" in content
     assert "light-fitting: 1" in content
@@ -85,14 +87,16 @@ def test_validate_default_runs_standard_pack(dxf_file: Path):
     assert service.process_drawings(project_id).success
 
     validated = service.validate_project(project_id)
-    assert validated.success and validated.payload is not None
+    assert validated.success
+    assert validated.payload is not None
     rule_ids = {result.rule_id for result in validated.payload.results}
     assert "agl.asset.location" in rule_ids
     assert "agl.drawing.empty-layers" in rule_ids
     assert len(validated.payload.results) == 5
 
     opted_out = service.validate_project(project_id, rules=[])
-    assert opted_out.success and opted_out.payload is not None
+    assert opted_out.success
+    assert opted_out.payload is not None
     assert opted_out.payload.results == []
 
 
@@ -112,7 +116,8 @@ def _two_projects() -> tuple[ApplicationService, str, str]:
     service = ApplicationService()
     first = service.create_project("Taxiway Kilo").payload
     second = service.create_project("Taxiway Lima").payload
-    assert first is not None and second is not None
+    assert first is not None
+    assert second is not None
     return service, first.project_id, second.project_id
 
 
@@ -181,14 +186,16 @@ def test_report_excludes_another_projects_findings():
     assert service.validate_project(kilo).success
 
     reported = service.generate_report(kilo)
-    assert reported.success and reported.payload is not None
+    assert reported.success
+    assert reported.payload is not None
     content = reported.payload[1][0].content
     assert "Duplicate asset names found" not in content
     assert "All asset names unique" in content
     assert "LIC1-01/001" not in content
 
     lima_report = service.generate_report(lima)
-    assert lima_report.success and lima_report.payload is not None
+    assert lima_report.success
+    assert lima_report.payload is not None
     assert "Duplicate asset names found" in lima_report.payload[1][0].content
 
 
@@ -199,7 +206,8 @@ def test_report_counts_only_the_projects_own_assets():
     _asset(service, lima, "LIC1-01/002")
 
     reported = service.generate_report(kilo)
-    assert reported.success and reported.payload is not None
+    assert reported.success
+    assert reported.payload is not None
     assert "light-fitting: 1" in reported.payload[1][0].content
 
 
@@ -231,5 +239,6 @@ def test_full_workflow_happy_path(dxf_file: Path):
     assert reported.payload is not None
     report, artifacts = reported.payload
     assert report.report_type == "project-summary"
-    assert artifacts and artifacts[0].format_name == "markdown"
+    assert artifacts
+    assert artifacts[0].format_name == "markdown"
     assert "Taxiway Kilo" in artifacts[0].content

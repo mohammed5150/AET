@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import PLUGIN_API_VERSION, AppConfig
-from app.core.errors import InfrastructureError
+from aet.core.config import PLUGIN_API_VERSION, AppConfig
+from aet.core.errors import InfrastructureError
 
 
 def test_defaults_match_the_documented_layout():
@@ -60,9 +60,9 @@ def test_from_env_falls_back_to_defaults():
 
 def test_with_overrides_ignores_unsupplied_values():
     base = AppConfig.from_env({"AET_LOG_LEVEL": "DEBUG"})
-    overridden = base.with_overrides(log_level=None, data_dir=Path("/tmp/out"))
+    overridden = base.with_overrides(log_level=None, data_dir=Path("/srv/artifacts"))
     assert overridden.log_level == "DEBUG"
-    assert overridden.data_dir == Path("/tmp/out")
+    assert overridden.data_dir == Path("/srv/artifacts")
     assert base.data_dir == Path("output")
 
 

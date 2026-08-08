@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from app.core.logging import AUDIT_LOG_FILE, DIAGNOSTIC_LOG_FILE
-from app.ui.cli import build_service, main, resolve_config
+from aet.core.logging import AUDIT_LOG_FILE, DIAGNOSTIC_LOG_FILE
+from aet.ui.cli import build_service, main, resolve_config
 
 
 def test_run_command_executes_full_pipeline(dxf_file: Path, capsys):
@@ -97,6 +97,6 @@ def test_unwritable_log_dir_is_reported_without_a_traceback(tmp_path: Path, caps
 
 
 def _parse(argv: list[str]):
-    from app.ui.cli import build_parser
+    from aet.ui.cli import build_parser
 
     return build_parser().parse_args(argv)

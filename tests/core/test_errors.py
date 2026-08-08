@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.core.errors import (
+from aet.core.errors import (
     AETError,
     InfrastructureError,
     InputError,

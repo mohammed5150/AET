@@ -2,16 +2,17 @@
 
 from datetime import UTC
 
-from app.models.asset import Asset, AssetRelation
-from app.models.drawing import DrawingSnapshot
-from app.models.project import Project, SourceInput
-from app.models.report import Report
-from app.models.validation import Severity, ValidationResult, ValidationRun
+from aet.models.asset import Asset, AssetRelation
+from aet.models.drawing import DrawingSnapshot
+from aet.models.project import Project, SourceInput
+from aet.models.report import Report
+from aet.models.validation import Severity, ValidationResult, ValidationRun
 
 
 def test_entities_get_stable_unique_identifiers():
     first, second = Project(name="A"), Project(name="B")
-    assert first.project_id and second.project_id
+    assert first.project_id
+    assert second.project_id
     assert first.project_id != second.project_id
 
 

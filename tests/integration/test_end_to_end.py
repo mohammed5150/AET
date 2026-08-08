@@ -7,19 +7,19 @@ and a plugin-provided validation rule, checking traceability along the way.
 
 from pathlib import Path
 
-from app.core.plugins import (
+from aet.core.plugins import (
     Plugin,
     PluginCategory,
     PluginManifest,
     PluginRuntime,
 )
-from app.models.asset import Asset
-from app.models.drawing import DrawingEntity, DrawingLayer, DrawingSnapshot
-from app.models.validation import Severity, ValidationResult
-from app.modules.asset_engine import AssetCollection, AssetEngine
-from app.modules.drawing_engine import DrawingEngine
-from app.modules.ingestion import IngestionEngine
-from app.services.use_cases import ApplicationService
+from aet.models.asset import Asset
+from aet.models.drawing import DrawingEntity, DrawingLayer, DrawingSnapshot
+from aet.models.validation import Severity, ValidationResult
+from aet.modules.asset_engine import AssetCollection, AssetEngine
+from aet.modules.drawing_engine import DrawingEngine
+from aet.modules.ingestion import IngestionEngine
+from aet.services.use_cases import ApplicationService
 
 
 class FakeInterpreter:

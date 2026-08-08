@@ -2,9 +2,9 @@
 
 import logging
 
-from app.core.logging import AUDIT_LOGGER_NAME, get_logger
-from app.models.project import Project
-from app.services.persistence import (
+from aet.core.logging import AUDIT_LOGGER_NAME, get_logger
+from aet.models.project import Project
+from aet.services.persistence import (
     RepositoryAuditSink,
     attach_audit_sink,
     detach_audit_sink,

@@ -3,8 +3,8 @@
 import hashlib
 from pathlib import Path
 
-from app.models.project import Project
-from app.modules.ingestion import IngestionEngine
+from aet.models.project import Project
+from aet.modules.ingestion import IngestionEngine
 
 
 def test_register_input_produces_hashed_source(tmp_path: Path):

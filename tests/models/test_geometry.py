@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from app.core.errors import ProcessingError
-from app.models.geometry import Coordinate, parse_coordinate
+from aet.core.errors import ProcessingError
+from aet.models.geometry import Coordinate, parse_coordinate
 
 
 def test_distance_is_planar_and_in_metres():
@@ -105,6 +105,7 @@ def test_parse_rejects_non_finite_ordinates_as_numbers_not_positions():
 def test_parsed_positions_measure_against_each_other():
     first = parse_coordinate("261000", "2703000", zone="40 N")
     second = parse_coordinate("261000", "2703100", zone="40 N")
-    assert first is not None and second is not None
+    assert first is not None
+    assert second is not None
     assert first.distance_to(second) == pytest.approx(100.0)
     assert not math.isnan(first.distance_to(second))

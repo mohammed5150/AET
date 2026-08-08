@@ -5,8 +5,8 @@ from pathlib import Path
 import ezdxf
 import pytest
 
-from app.core.logging import reset_logging
-from app.services.persistence import detach_audit_sink
+from aet.core.logging import reset_logging
+from aet.services.persistence import detach_audit_sink
 
 
 @pytest.fixture(autouse=True)

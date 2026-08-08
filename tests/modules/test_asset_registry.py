@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from app.models.geometry import Coordinate, parse_coordinate
-from app.models.project import SourceInput
-from app.modules.asset_engine import (
+from aet.models.geometry import Coordinate, parse_coordinate
+from aet.models.project import SourceInput
+from aet.modules.asset_engine import (
     RegistryColumnMap,
     XlsxAssetRegistryReader,
     classify_asset_type,
@@ -80,6 +80,7 @@ ROWS = [
 def _registry(path: Path, headers=None, rows=ROWS) -> Path:
     workbook = Workbook()
     sheet = workbook.active
+    assert sheet is not None
     sheet.title = "Assets"
     sheet.append(headers or HEADERS)
     for row in rows:
@@ -133,7 +134,7 @@ def test_missing_required_columns_fail_with_names(tmp_path: Path):
         headers=["name", "mainArea"],
         rows=[["X.1", "ST"]],
     )
-    from app.core.errors import InputError
+    from aet.core.errors import InputError
 
     with pytest.raises(InputError) as excinfo:
         XlsxAssetRegistryReader().read(_source(path))
@@ -141,7 +142,7 @@ def test_missing_required_columns_fail_with_names(tmp_path: Path):
 
 
 def test_missing_file_fails_with_input_error(tmp_path: Path):
-    from app.core.errors import InputError
+    from aet.core.errors import InputError
 
     with pytest.raises(InputError):
         XlsxAssetRegistryReader().read(_source(tmp_path / "missing.xlsx"))
@@ -228,7 +229,7 @@ def test_name_based_fallback(asset_class: str, name: str, expected: str):
         ("123.45", {}),
     ],
 )
-def test_circuit_derivation(name: str, expected: dict):
+def test_circuit_derivation(name: str, expected: dict[str, str]):
     assert derive_circuit(name) == expected
 
 
@@ -275,4 +276,6 @@ def test_unusable_ordinates_keep_the_row_and_preserve_the_raw_values(tmp_path: P
 
 def test_elevation_is_not_read_from_the_default_export():
     # The AUH export carries no elevation column; assets stay planar.
-    assert parse_coordinate("1", "2").elevation is None
+    planar = parse_coordinate("1", "2")
+    assert planar is not None
+    assert planar.elevation is None
