@@ -33,7 +33,7 @@ def _samples(names: list[str]) -> str:
     return ", ".join(names[:SAMPLE_LIMIT])
 
 
-def _finding(
+def aggregated_finding(
     rule_id: str,
     failures: list[str],
     total_checked: int,
@@ -41,6 +41,11 @@ def _finding(
     failure_message: str,
     passed_message: str,
 ) -> ValidationResult:
+    """One finding summarising many failures, with a count and samples.
+
+    Public because SDS-012's engineering rules build findings the same way;
+    a helper shared across modules should not be private.
+    """
     if failures:
         return ValidationResult(
             rule_id=rule_id,
@@ -69,7 +74,7 @@ class AssetLocationRule:
     def evaluate(self, context: ValidationContext) -> list[ValidationResult]:
         missing = [asset.name for asset in context.assets if asset.location is None]
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 missing,
                 len(context.assets),
@@ -91,7 +96,7 @@ class AssetClassificationRule:
             asset.name for asset in context.assets if asset.asset_type == "other"
         ]
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 unclassified,
                 len(context.assets),
@@ -134,7 +139,7 @@ class DuplicateAssetNameRule:
                 if count > 1
             )
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 duplicates,
                 len(context.assets),
@@ -159,7 +164,7 @@ class SkippedEntitiesRule:
             if snapshot.metadata.get("skipped_entities", "0") not in ("", "0")
         ]
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 skipped,
                 len(context.snapshots),
@@ -186,7 +191,7 @@ class EmptyLayersRule:
         ]
         total_layers = sum(len(snapshot.layers) for snapshot in context.snapshots)
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 empty,
                 total_layers,
@@ -227,7 +232,7 @@ class ReconciliationRule:
                 )
             ]
         return [
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 result.ambiguous_names,
                 result.drawing_total + result.registry_total,
@@ -235,7 +240,7 @@ class ReconciliationRule:
                 "Asset names are duplicated, so they cannot be reconciled",
                 "Every asset name is unique on both sides",
             ),
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 [pair.name for pair in result.type_mismatches],
                 len(result.matched),
@@ -243,7 +248,7 @@ class ReconciliationRule:
                 "Matched assets disagree on asset type",
                 "Matched assets agree on asset type",
             ),
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 [asset.name for asset in result.missing_from_registry],
                 result.drawing_total,
@@ -251,7 +256,7 @@ class ReconciliationRule:
                 "Assets in the drawing are absent from the registry",
                 "Every drawing asset is in the registry",
             ),
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 [asset.name for asset in result.missing_from_drawing],
                 result.registry_total,
@@ -259,7 +264,7 @@ class ReconciliationRule:
                 "Assets in the registry are absent from the drawing",
                 "Every registry asset is in the drawing",
             ),
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 [
                     f"{pair.name} ({pair.distance:.2f} m)"
@@ -276,7 +281,7 @@ class ReconciliationRule:
             ),
             # Reported so positions that were never compared cannot be mistaken
             # for positions that agreed (SDS-011 §7.2).
-            _finding(
+            aggregated_finding(
                 self.rule_id,
                 [pair.name for pair in result.unchecked_positions],
                 len(result.matched),
