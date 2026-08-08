@@ -1,0 +1,24 @@
+# Controlled reference documents are never committed (ADR-003). This guard
+# catches the accident: a licensed or restricted document dropped into the
+# working tree while cataloguing it. A document committed once stays in the
+# git history after any later deletion, so the refusal has to happen here.
+#
+# AET records where a reference document is; it never holds one. If a document
+# genuinely is freely redistributable, say so on its revision's
+# ReferenceSource rather than by weakening this file.
+
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.dwg
+*.dxf
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import types
 from dataclasses import fields, is_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
@@ -26,6 +26,9 @@ def to_document(instance: Any) -> Any:
     if isinstance(instance, Enum):
         return instance.value
     if isinstance(instance, datetime):
+        return instance.isoformat()
+    # After datetime, which is itself a date: a timestamp must keep its time.
+    if isinstance(instance, date):
         return instance.isoformat()
     if isinstance(instance, list | tuple):
         return [to_document(item) for item in instance]
@@ -71,6 +74,8 @@ def _decode(declared: Any, value: Any) -> Any:
             return declared(value)
         if declared is datetime:
             return datetime.fromisoformat(value)
+        if declared is date:
+            return date.fromisoformat(value)
     return value
 
 

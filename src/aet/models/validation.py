@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from aet.models.reference import ReferenceCitation
 from aet.utils.ids import new_id, utc_now
 
 
@@ -28,7 +29,15 @@ class RunStatus(StrEnum):
 
 @dataclass(slots=True)
 class ValidationResult:
-    """A single severity-based finding with traceable evidence references."""
+    """A single severity-based finding with traceable evidence references.
+
+    ``citation`` is the other half of that traceability: evidence says which
+    drawing-derived assets the finding is about, and the citation says which
+    published clause it was judged against (SDS-016 §12.2). It is carried by
+    value, so amending the reference library later cannot rewrite what an
+    executed run relied on. A finding from a rule that checks data hygiene
+    rather than a published criterion has none, and claims none.
+    """
 
     rule_id: str
     severity: Severity
@@ -36,6 +45,7 @@ class ValidationResult:
     message: str
     asset_id: str | None = None
     evidence: dict[str, str] = field(default_factory=dict)
+    citation: ReferenceCitation | None = None
     run_id: str = ""
     result_id: str = field(default_factory=new_id)
     executed_at: datetime = field(default_factory=utc_now)

@@ -25,12 +25,18 @@ STAGE_NAME = "reporting"
 
 @dataclass(frozen=True, slots=True)
 class FindingLine:
-    """One validation finding as presented in a report."""
+    """One validation finding as presented in a report.
+
+    ``reference`` is the rendered citation of the published clause the finding
+    was judged against, empty for a rule that checks no published criterion
+    (SDS-016 §12.2).
+    """
 
     rule_id: str
     severity: str
     passed: bool
     message: str
+    reference: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,16 +93,23 @@ class MarkdownFormatter:
                 lines.append(f"- {severity}: {count}")
             lines.append("")
         if view.findings:
+            # The reference column appears only when something cites one, so a
+            # report of hygiene findings is not padded with an empty column
+            # implying a criterion that was never checked (SDS-016 §12.2).
+            cited = any(finding.reference for finding in view.findings)
             lines.append("## Findings")
             lines.append("")
-            lines.append("| Rule | Severity | Status | Message |")
-            lines.append("| --- | --- | --- | --- |")
+            header = "| Rule | Severity | Status | Message |"
+            divider = "| --- | --- | --- | --- |"
+            lines.append(f"{header} Reference |" if cited else header)
+            lines.append(f"{divider} --- |" if cited else divider)
             for finding in view.findings:
                 status = "passed" if finding.passed else "failed"
-                lines.append(
+                row = (
                     f"| {finding.rule_id} | {finding.severity} "
                     f"| {status} | {finding.message} |"
                 )
+                lines.append(f"{row} {finding.reference} |" if cited else row)
             lines.append("")
         return "\n".join(lines)
 
@@ -133,6 +146,7 @@ class ReportingEngine:
                     severity=str(result.severity),
                     passed=result.passed,
                     message=result.message,
+                    reference=str(result.citation) if result.citation else "",
                 )
                 for result in results
             ],

@@ -26,6 +26,11 @@ from aet.core.errors import InfrastructureError
 from aet.models.asset import Asset, AssetRelation
 from aet.models.drawing import DrawingSnapshot
 from aet.models.project import Project, SourceInput
+from aet.models.reference import (
+    ReferenceDocument,
+    ReferenceEdition,
+    ReferenceRevision,
+)
 from aet.models.report import Report, ReportArtifact
 from aet.models.validation import ValidationResult, ValidationRun
 from aet.services.persistence import AuditTrail, Repositories
@@ -239,6 +244,28 @@ def sqlite_repositories(connection: sqlite3.Connection) -> Repositories:
             "report_artifacts",
             ReportArtifact,
             lambda item: item.artifact_id,
+        ),
+        # Reference records belong to the toolkit rather than to a project
+        # (SDS-016 §12.1), so they carry no scope column. Their applicability
+        # and source metadata live in the document body with the rest of the
+        # entity, for the reason SDS-013 §5 gives for every other table.
+        reference_documents=SqliteRepository(
+            connection,
+            "reference_documents",
+            ReferenceDocument,
+            lambda item: item.reference_id,
+        ),
+        reference_editions=SqliteRepository(
+            connection,
+            "reference_editions",
+            ReferenceEdition,
+            lambda item: item.edition_id,
+        ),
+        reference_revisions=SqliteRepository(
+            connection,
+            "reference_revisions",
+            ReferenceRevision,
+            lambda item: item.revision_id,
         ),
         audit=SqliteAuditTrail(connection),
     )
