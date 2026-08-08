@@ -42,10 +42,21 @@ validation rules, and report providers.
 How SDS-002 modules map onto this repository's layout is recorded in
 [ADR-001](docs/ADR/ADR-001-sds-002-package-mapping.md).
 
-Try the walking skeleton end to end:
+Run the whole pipeline in one shot:
 
 ```bash
-aet run --name "Demo Project" path/to/drawing.dwg
+aet run --name "Demo Project" path/to/drawing.dxf
+```
+
+Or work a project across separate commands, keeping state in a database:
+
+```bash
+export AET_DATABASE=./aet.db
+aet project create "Taxiway Kilo"
+aet import "Taxiway Kilo" taxiway.dxf --registry assets.xlsx
+aet process "Taxiway Kilo"
+aet validate "Taxiway Kilo"     # exits 2 if a rule fails
+aet report "Taxiway Kilo"
 ```
 
 ## Configuration

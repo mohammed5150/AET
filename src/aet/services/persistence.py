@@ -33,6 +33,18 @@ class Repository[T](Protocol):
 
     def get(self, item_id: str) -> T | None: ...
 
+    # Declared before `list`: that method shadows the builtin inside the class
+    # body, leaving any later `list[T]` annotation unresolvable.
+    def list_for_project(self, project_id: str) -> list[T]:
+        """Entities belonging to one project.
+
+        Part of the contract rather than a SQLite extra: every use case reads
+        this way, so a caller must be able to ask for it without knowing
+        which store answers. A store with an index serves it as a lookup; one
+        without scans, but the caller does not have to care (SDS-013 §5.1).
+        """
+        ...
+
     def list(self) -> list[T]: ...
 
 
@@ -48,6 +60,14 @@ class InMemoryRepository[T]:
 
     def get(self, item_id: str) -> T | None:
         return self._items.get(item_id)
+
+    # Declared before `list`, for the same shadowing reason as the protocol.
+    def list_for_project(self, project_id: str) -> list[T]:
+        return [
+            item
+            for item in self._items.values()
+            if getattr(item, "project_id", None) == project_id
+        ]
 
     def list(self) -> list[T]:
         return list(self._items.values())

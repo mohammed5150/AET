@@ -19,7 +19,7 @@ from aet.core.outcome import Outcome
 from aet.core.plugins import PluginCategory, PluginRuntime
 from aet.models.asset import Asset, AssetRelation
 from aet.models.drawing import DrawingSnapshot
-from aet.models.project import Project, SourceInput
+from aet.models.project import Project, SourceInput, SourceRole
 from aet.models.report import Report, ReportArtifact, ReportRequest
 from aet.models.validation import ValidationResult
 from aet.modules.asset_engine import AssetEngine, XlsxAssetRegistryReader
@@ -138,10 +138,16 @@ class ApplicationService:
         project = self._repos.projects.get(project_id)
         if project is None:
             return self._unknown_project(project_id, correlation_id)
-        sources = self._sources_for(project_id)
+        # Only drawings: a registry workbook is a source input too, and
+        # asking the drawing engine to interpret one fails (SDS-015 §6).
+        sources = [
+            source
+            for source in self._sources_for(project_id)
+            if source.role is SourceRole.DRAWING
+        ]
         if not sources:
             error = WorkflowError(
-                f"Project '{project_id}' has no registered source inputs",
+                f"Project '{project_id}' has no registered drawings",
                 remediation="Import at least one drawing before processing.",
             )
             return Outcome.from_error(error, correlation_id=correlation_id)
@@ -210,7 +216,7 @@ class ApplicationService:
         if project is None:
             return self._unknown_project(project_id, correlation_id)
         registered = self._ingestion.register_input(
-            project, path, correlation_id=correlation_id
+            project, path, role=SourceRole.REGISTRY, correlation_id=correlation_id
         )
         if not registered.success or registered.payload is None:
             return Outcome.fail(
@@ -366,25 +372,13 @@ class ApplicationService:
     # this project's validation context or report.
 
     def _sources_for(self, project_id: str) -> list[SourceInput]:
-        return [
-            source
-            for source in self._repos.sources.list()
-            if source.project_id == project_id
-        ]
+        return self._repos.sources.list_for_project(project_id)
 
     def _snapshots_for(self, project_id: str) -> list[DrawingSnapshot]:
-        return [
-            snapshot
-            for snapshot in self._repos.snapshots.list()
-            if snapshot.project_id == project_id
-        ]
+        return self._repos.snapshots.list_for_project(project_id)
 
     def _assets_for(self, project_id: str) -> list[Asset]:
-        return [
-            asset
-            for asset in self._repos.assets.list()
-            if asset.project_id == project_id
-        ]
+        return self._repos.assets.list_for_project(project_id)
 
     def _relations_among(self, assets: list[Asset]) -> list[AssetRelation]:
         """Relations whose both endpoints are assets of the same project.

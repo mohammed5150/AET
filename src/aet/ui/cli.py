@@ -15,9 +15,10 @@ from typing import Any
 
 from aet import __version__
 from aet.core.config import AppConfig
-from aet.core.errors import AETError
+from aet.core.errors import AETError, WorkflowError
 from aet.core.logging import LEVEL_NAMES, configure_logging
 from aet.core.outcome import Outcome
+from aet.models.project import Project
 from aet.services.persistence import attach_audit_sink
 from aet.services.sqlite import connect, sqlite_repositories
 from aet.services.use_cases import ApplicationService
@@ -57,6 +58,140 @@ def _print_failure(outcome: Outcome[Any]) -> None:
     _print_error(
         outcome.error_code or "AET_ERROR", outcome.message, outcome.remediation
     )
+
+
+def _require_database(config: AppConfig) -> None:
+    """Refuse a stateful command with nowhere to keep state (SDS-015 §4)."""
+    if config.database is None:
+        raise WorkflowError(
+            "This command needs a database to read and write project state",
+            remediation=(
+                "Pass --database PATH, or set AET_DATABASE. Use `aet run` for a "
+                "one-shot pipeline that keeps nothing."
+            ),
+        )
+
+
+def _resolve_project(service: ApplicationService, token: str) -> Project:
+    """Find a project by identifier, or by name when that is unambiguous.
+
+    Identifiers are generated, so requiring one would mean copying a 32-digit
+    string between commands. A name is what an operator actually has.
+    """
+    found = service.repositories.projects.get(token)
+    if found is not None:
+        return found
+    matches = [
+        project
+        for project in service.repositories.projects.list()
+        if project.name == token
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise WorkflowError(
+            f"No project matches '{token}'",
+            remediation="List projects with `aet project list`.",
+        )
+    # Names are not unique, so an ambiguous one is reported rather than
+    # resolved by picking the first (SDS-015 §5).
+    raise WorkflowError(
+        f"'{token}' matches {len(matches)} projects",
+        remediation=(
+            "Use the project identifier: "
+            + ", ".join(project.project_id for project in matches[:3])
+        ),
+    )
+
+
+def _project_create(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    created = service.create_project(args.name, args.description)
+    if not created.success or created.payload is None:
+        _print_failure(created)
+        return 1
+    print(f"{created.payload.project_id}  {created.payload.name}")
+    return 0
+
+
+def _project_list(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    projects = service.repositories.projects.list()
+    if not projects:
+        print("No projects yet. Create one with `aet project create NAME`.")
+        return 0
+    for project in projects:
+        assets = len(service.repositories.assets.list_for_project(project.project_id))
+        print(f"{project.project_id}  {project.name}  ({assets} asset(s))")
+    return 0
+
+
+def _import(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    project = _resolve_project(service, args.project)
+    for file_path in args.files:
+        imported = service.import_drawing(project.project_id, Path(file_path))
+        if not imported.success:
+            _print_failure(imported)
+            return 1
+        print(f"Imported drawing {file_path}")
+    for registry in args.registry or []:
+        imported_registry = service.import_asset_registry(
+            project.project_id, Path(registry)
+        )
+        if not imported_registry.success:
+            _print_failure(imported_registry)
+            return 1
+        print(f"Imported registry {registry}: {imported_registry.message}")
+    return 0
+
+
+def _process(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    project = _resolve_project(service, args.project)
+    processed = service.process_drawings(project.project_id)
+    if not processed.success or processed.payload is None:
+        _print_failure(processed)
+        return 1
+    for record in processed.payload.records:
+        print(f"Stage {record.stage}: {record.status}")
+    return 0
+
+
+def _validate(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    project = _resolve_project(service, args.project)
+    validated = service.validate_project(project.project_id)
+    if not validated.success or validated.payload is None:
+        _print_failure(validated)
+        return 1
+    failures = 0
+    for result in validated.payload.results:
+        status = "passed" if result.passed else "failed"
+        if not result.passed:
+            failures += 1
+        print(f"{result.rule_id:32} {result.severity:8} {status}  {result.message}")
+    # A non-zero status for findings lets a pipeline gate on validation.
+    return 2 if failures else 0
+
+
+def _report(args: argparse.Namespace, config: AppConfig) -> int:
+    _require_database(config)
+    service = build_service(config)
+    project = _resolve_project(service, args.project)
+    reported = service.generate_report(project.project_id)
+    if not reported.success or reported.payload is None:
+        _print_failure(reported)
+        return 1
+    _, artifacts = reported.payload
+    for artifact in artifacts:
+        print(artifact.content)
+    return 0
 
 
 def _run(args: argparse.Namespace, config: AppConfig) -> int:
@@ -150,6 +285,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Asset registry .xlsx to import after drawing processing",
     )
     run_parser.set_defaults(handler=_run)
+
+    project_parser = subparsers.add_parser("project", help="Create and list projects")
+    project_actions = project_parser.add_subparsers(dest="action", required=True)
+    create_parser = project_actions.add_parser("create", help="Create a project")
+    create_parser.add_argument("name", help="Project name")
+    create_parser.add_argument("--description", default="", help="Project description")
+    create_parser.set_defaults(handler=_project_create)
+    list_parser = project_actions.add_parser("list", help="List known projects")
+    list_parser.set_defaults(handler=_project_list)
+
+    import_parser = subparsers.add_parser(
+        "import", help="Register drawings and asset registries with a project"
+    )
+    import_parser.add_argument("project", help="Project name or identifier")
+    import_parser.add_argument("files", nargs="*", help="Drawing files to register")
+    import_parser.add_argument(
+        "--registry", action="append", help="Asset registry .xlsx to import"
+    )
+    import_parser.set_defaults(handler=_import)
+
+    process_parser = subparsers.add_parser(
+        "process", help="Interpret drawings and derive assets"
+    )
+    process_parser.add_argument("project", help="Project name or identifier")
+    process_parser.set_defaults(handler=_process)
+
+    validate_parser = subparsers.add_parser(
+        "validate", help="Run the validation rules; exits 2 when a rule fails"
+    )
+    validate_parser.add_argument("project", help="Project name or identifier")
+    validate_parser.set_defaults(handler=_validate)
+
+    report_parser = subparsers.add_parser("report", help="Generate a project report")
+    report_parser.add_argument("project", help="Project name or identifier")
+    report_parser.set_defaults(handler=_report)
 
     version_parser = subparsers.add_parser("version", help="Show the AET version")
     version_parser.set_defaults(handler=_version)
