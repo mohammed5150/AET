@@ -1,14 +1,25 @@
-"""Built-in standard validation rule pack (SDS-005).
+"""Built-in standard validation rule pack (SDS-005, SDS-011).
 
-Each rule emits exactly one aggregated finding per run — passed or failed
-— with a count and up to :data:`SAMPLE_LIMIT` sample references as
-evidence, so reports stay readable at any project size.
+Each rule emits one aggregated finding per concern — passed or failed —
+with a count and up to :data:`SAMPLE_LIMIT` sample references as evidence,
+so reports stay readable at any project size.
+
+:class:`ReconciliationRule` is the exception to one-finding-per-rule: it runs
+one comparison and reports each way the two sources can disagree, since
+recomputing the comparison per rule would repeat the whole match.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 
+from aet.models.reconciliation import (
+    DEFAULT_POSITION_TOLERANCE_M,
+    Reconciliation,
+    match_key,
+    partition_by_provenance,
+    reconcile,
+)
 from aet.models.validation import Severity, ValidationResult
 from aet.modules.validation_engine.engine import (
     ValidationContext,
@@ -92,24 +103,44 @@ class AssetClassificationRule:
 
 
 class DuplicateAssetNameRule:
-    """Asset names are unique within a project (SDS-005 §4)."""
+    """Asset names are unique within each source (SDS-005 §4, SDS-011 §8).
+
+    Counted per provenance, not across the project. Once a drawing and a
+    registry are both imported, every reconciled pair shares a name by
+    definition, so counting the union would report each successful match as a
+    duplicate — contradicting the reconciliation finding beside it.
+
+    Names are compared as reconciliation compares them, so a name differing
+    only in case is a duplicate here and ambiguous there, rather than passing
+    one check and failing the other.
+    """
 
     rule_id = "agl.asset.duplicate-names"
-    description = "Asset names are unique"
+    description = "Asset names are unique within each source"
 
     def evaluate(self, context: ValidationContext) -> list[ValidationResult]:
-        counts = Counter(asset.name for asset in context.assets)
-        duplicates = [
-            f"{name} (x{count})" for name, count in counts.items() if count > 1
-        ]
+        drawing, registry = partition_by_provenance(context.assets)
+        duplicates: list[str] = []
+        for label, group in (("drawing", drawing), ("registry", registry)):
+            recorded: dict[str, str] = {}
+            counts: Counter[str] = Counter()
+            for asset in group:
+                key = match_key(asset.name)
+                counts[key] += 1
+                recorded.setdefault(key, asset.name)
+            duplicates.extend(
+                f"{recorded[key]} (x{count} in {label})"
+                for key, count in counts.items()
+                if count > 1
+            )
         return [
             _finding(
                 self.rule_id,
                 duplicates,
                 len(context.assets),
                 Severity.ERROR,
-                "Duplicate asset names found",
-                "All asset names unique",
+                "Duplicate asset names found within a source",
+                "All asset names unique within each source",
             )
         ]
 
@@ -166,6 +197,102 @@ class EmptyLayersRule:
         ]
 
 
+class ReconciliationRule:
+    """Compares drawing-derived assets against the registry (SDS-011)."""
+
+    rule_id = "agl.reconcile"
+    description = "The drawing and the asset registry agree"
+
+    def __init__(
+        self, position_tolerance_m: float = DEFAULT_POSITION_TOLERANCE_M
+    ) -> None:
+        self._tolerance = position_tolerance_m
+
+    def evaluate(self, context: ValidationContext) -> list[ValidationResult]:
+        drawing, registry = partition_by_provenance(context.assets)
+        result = reconcile(drawing, registry, position_tolerance_m=self._tolerance)
+        if not result.applicable:
+            # Comparing against an absent side would report every asset as
+            # missing, which is noise rather than a finding (SDS-011 §7.1).
+            return [
+                ValidationResult(
+                    rule_id=self.rule_id,
+                    severity=Severity.INFO,
+                    passed=True,
+                    message=(
+                        "Reconciliation not applicable: "
+                        f"{result.drawing_total} drawing asset(s) and "
+                        f"{result.registry_total} registry asset(s)"
+                    ),
+                )
+            ]
+        return [
+            _finding(
+                self.rule_id,
+                result.ambiguous_names,
+                result.drawing_total + result.registry_total,
+                Severity.ERROR,
+                "Asset names are duplicated, so they cannot be reconciled",
+                "Every asset name is unique on both sides",
+            ),
+            _finding(
+                self.rule_id,
+                [pair.name for pair in result.type_mismatches],
+                len(result.matched),
+                Severity.ERROR,
+                "Matched assets disagree on asset type",
+                "Matched assets agree on asset type",
+            ),
+            _finding(
+                self.rule_id,
+                [asset.name for asset in result.missing_from_registry],
+                result.drawing_total,
+                Severity.WARNING,
+                "Assets in the drawing are absent from the registry",
+                "Every drawing asset is in the registry",
+            ),
+            _finding(
+                self.rule_id,
+                [asset.name for asset in result.missing_from_drawing],
+                result.registry_total,
+                Severity.WARNING,
+                "Assets in the registry are absent from the drawing",
+                "Every registry asset is in the drawing",
+            ),
+            _finding(
+                self.rule_id,
+                [
+                    f"{pair.name} ({pair.distance:.2f} m)"
+                    for pair in result.position_mismatches
+                    if pair.distance is not None
+                ],
+                len(result.matched),
+                Severity.WARNING,
+                (
+                    f"Matched assets are more than {self._tolerance:g} m apart "
+                    f"between drawing and registry"
+                ),
+                f"Matched assets agree on position within {self._tolerance:g} m",
+            ),
+            # Reported so positions that were never compared cannot be mistaken
+            # for positions that agreed (SDS-011 §7.2).
+            _finding(
+                self.rule_id,
+                [pair.name for pair in result.unchecked_positions],
+                len(result.matched),
+                Severity.INFO,
+                "Matched assets could not be compared by position",
+                "Every matched asset was compared by position",
+            ),
+        ]
+
+
+def reconciliation_summary(context: ValidationContext) -> Reconciliation:
+    """The reconciliation for a context, for callers wanting the detail."""
+    drawing, registry = partition_by_provenance(context.assets)
+    return reconcile(drawing, registry)
+
+
 def standard_rules() -> list[ValidationRule]:
     """The SDS-005 standard rule pack, in evaluation order."""
     return [
@@ -174,4 +301,5 @@ def standard_rules() -> list[ValidationRule]:
         DuplicateAssetNameRule(),
         SkippedEntitiesRule(),
         EmptyLayersRule(),
+        ReconciliationRule(),
     ]

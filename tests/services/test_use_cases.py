@@ -97,7 +97,10 @@ def test_validate_default_runs_standard_pack(dxf_file: Path):
     rule_ids = {result.rule_id for result in validated.payload.results}
     assert "agl.asset.location" in rule_ids
     assert "agl.drawing.empty-layers" in rule_ids
-    assert len(validated.payload.results) == 5
+    assert "agl.reconcile" in rule_ids
+    # Five single-finding rules, plus reconciliation reporting that it does not
+    # apply with no registry imported (SDS-011 §7.1).
+    assert len(validated.payload.results) == 6
 
     opted_out = service.validate_project(project_id, rules=[])
     assert opted_out.success
