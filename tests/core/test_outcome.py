@@ -1,7 +1,7 @@
 """Tests for structured outcomes (SDS-002 §12.3)."""
 
-from app.core.errors import InputError
-from app.core.outcome import Outcome
+from aet.core.errors import InputError
+from aet.core.outcome import Outcome
 
 
 def test_ok_carries_payload_and_correlation_id():
@@ -13,7 +13,7 @@ def test_ok_carries_payload_and_correlation_id():
 
 
 def test_fail_carries_code_message_and_remediation():
-    outcome = Outcome.fail(
+    outcome: Outcome[str] = Outcome.fail(
         "INPUT_ERROR",
         "File missing",
         correlation_id="cid-2",
@@ -28,7 +28,7 @@ def test_fail_carries_code_message_and_remediation():
 
 def test_from_error_maps_expected_errors():
     error = InputError("Corrupt source", remediation="Re-export the DWG")
-    outcome = Outcome.from_error(error, correlation_id="cid-3")
+    outcome: Outcome[str] = Outcome.from_error(error, correlation_id="cid-3")
     assert not outcome.success
     assert outcome.error_code == "INPUT_ERROR"
     assert outcome.message == "Corrupt source"

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import AppConfig
-from app.core.errors import InfrastructureError
-from app.core.logging import (
+from aet.core.config import AppConfig
+from aet.core.errors import InfrastructureError
+from aet.core.logging import (
     AUDIT_LOG_FILE,
     AUDIT_LOGGER_NAME,
     DIAGNOSTIC_LOG_FILE,
@@ -70,7 +70,7 @@ def test_resolve_level_rejects_unknown_names():
         resolve_level("CHATTY")
 
 
-def _events(path: Path) -> list[dict]:
+def _events(path: Path) -> list[dict[str, object]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line]
 

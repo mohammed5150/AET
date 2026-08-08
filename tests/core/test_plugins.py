@@ -1,6 +1,8 @@
 """Tests for the plugin runtime (SDS-002 §10)."""
 
-from app.core.plugins import (
+from typing import Any
+
+from aet.core.plugins import (
     Plugin,
     PluginCategory,
     PluginManifest,
@@ -27,7 +29,7 @@ class _ExplodingPlugin(_StubPlugin):
 
 
 def _manifest(**overrides) -> PluginManifest:
-    values = {
+    values: dict[str, Any] = {
         "plugin_id": "vendor.rule-pack",
         "name": "Rule Pack",
         "version": "1.0.0",

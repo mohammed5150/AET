@@ -6,9 +6,9 @@ from pathlib import Path
 import ezdxf
 import pytest
 
-from app.core.errors import InputError, ProcessingError
-from app.models.project import SourceInput
-from app.modules.drawing_engine import (
+from aet.core.errors import InputError, ProcessingError
+from aet.models.project import SourceInput
+from aet.modules.drawing_engine import (
     DrawingEngine,
     DwgConversionInterpreter,
     InterpreterRegistry,
@@ -112,8 +112,13 @@ def test_real_libredwg_roundtrip(tmp_path: Path, dxf_file: Path):
     import subprocess
 
     dwg = tmp_path / "roundtrip.dwg"
-    subprocess.run(
-        ["dxf2dwg", "-o", str(dwg), str(dxf_file)], check=True, capture_output=True
+    executable = shutil.which("dxf2dwg")
+    assert executable is not None  # guaranteed by the skipif above
+    # Absolute path, fixed argv, no shell: nothing here comes from test input.
+    subprocess.run(  # noqa: S603 - resolved executable, fixed argv, no shell
+        [executable, "-o", str(dwg), str(dxf_file)],
+        check=True,
+        capture_output=True,
     )
     source = SourceInput(
         project_id="p1", path=str(dwg), file_hash="h", file_format="dwg"

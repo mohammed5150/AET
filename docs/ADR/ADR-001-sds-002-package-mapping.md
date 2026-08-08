@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted, then partly superseded by
+[ADR-002](ADR-002-src-layout.md): the package moved from a repository-root
+`app/` to `src/aet/`. The SDS-002 module mapping below still holds — read
+every `app/` path as `src/aet/`.
 
 ## Context
 

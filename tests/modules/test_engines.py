@@ -1,14 +1,14 @@
 """Tests for drawing, asset, validation, and reporting engines."""
 
-from app.models.asset import Asset
-from app.models.drawing import DrawingSnapshot
-from app.models.project import Project, SourceInput
-from app.models.report import ReportRequest
-from app.models.validation import RunStatus, Severity, ValidationResult
-from app.modules.asset_engine import AssetCollection, AssetEngine
-from app.modules.drawing_engine import DrawingEngine, PassthroughInterpreter
-from app.modules.reporting_engine import MarkdownFormatter, ReportingEngine
-from app.modules.validation_engine import ValidationContext, ValidationEngine
+from aet.models.asset import Asset
+from aet.models.drawing import DrawingSnapshot
+from aet.models.project import Project, SourceInput
+from aet.models.report import ReportRequest
+from aet.models.validation import RunStatus, Severity, ValidationResult
+from aet.modules.asset_engine import AssetCollection, AssetEngine
+from aet.modules.drawing_engine import DrawingEngine, PassthroughInterpreter
+from aet.modules.reporting_engine import MarkdownFormatter, ReportingEngine
+from aet.modules.validation_engine import ValidationContext, ValidationEngine
 
 
 def _source() -> SourceInput:
@@ -111,6 +111,7 @@ def test_reporting_engine_composes_and_renders_markdown():
         request, view, [MarkdownFormatter()], correlation_id="cid-5"
     )
     assert outcome.success
+    assert outcome.payload is not None
     report, artifacts = outcome.payload
     assert report.summary == "1 asset(s), 1 finding(s)"
     assert len(artifacts) == 1

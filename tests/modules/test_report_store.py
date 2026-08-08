@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from app.core.errors import InfrastructureError
-from app.models.project import Project
-from app.models.report import Report, ReportArtifact
-from app.modules.reporting_engine import FileArtifactStore, project_slug
+from aet.core.errors import InfrastructureError
+from aet.models.project import Project
+from aet.models.report import Report, ReportArtifact
+from aet.modules.reporting_engine import FileArtifactStore, project_slug
 
 
 def _artifact(report: Report, content: str = "# Report") -> ReportArtifact:

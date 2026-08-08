@@ -4,9 +4,9 @@ from pathlib import Path
 
 import ezdxf
 
-from app.models.drawing import DrawingSnapshot
-from app.models.project import SourceInput
-from app.modules.drawing_engine import (
+from aet.models.drawing import DrawingEntity, DrawingSnapshot
+from aet.models.project import SourceInput
+from aet.modules.drawing_engine import (
     DrawingEngine,
     DxfInterpreter,
     InterpreterRegistry,
@@ -74,7 +74,9 @@ def test_dxf_interpretation_normalizes_entities(tmp_path: Path):
     }
     assert by_type["line"].geometry == {"points": [[0.0, 0.0], [10.0, 0.0]]}
     assert by_type["lwpolyline"].geometry["closed"] is True
-    assert len(by_type["lwpolyline"].geometry["points"]) == 3
+    lwpolyline_points = by_type["lwpolyline"].geometry["points"]
+    assert isinstance(lwpolyline_points, list)
+    assert len(lwpolyline_points) == 3
     assert by_type["circle"].geometry == {"center": [1.0, 1.0], "radius": 0.3}
     assert by_type["arc"].geometry["start_angle"] == 0.0
     assert by_type["arc"].geometry["end_angle"] == 90.0
@@ -107,7 +109,7 @@ def test_corrupt_dxf_fails_with_input_error(tmp_path: Path):
 
 
 def test_dwg_without_backend_fails_with_conversion_hint(tmp_path: Path):
-    from app.modules.drawing_engine import (
+    from aet.modules.drawing_engine import (
         DwgConversionInterpreter,
         InterpreterRegistry,
     )
@@ -155,6 +157,7 @@ def test_registry_selects_extension_by_declared_format(dxf_file: Path):
     )
     outcome = engine.normalize(source)
     assert outcome.success
+    assert outcome.payload is not None
     assert outcome.payload.metadata["interpreter"] == "custom"
 
 
@@ -182,7 +185,15 @@ def _block_reference_dxf(path: Path) -> None:
     document.saveas(path)
 
 
-def _inserts_by_block(snapshot: DrawingSnapshot) -> dict:
+def _snapshot_for(path: Path) -> DrawingSnapshot:
+    """Interpret a drawing, asserting it actually produced a snapshot."""
+    outcome = DrawingEngine().normalize(_source_for(path))
+    assert outcome.success
+    assert outcome.payload is not None
+    return outcome.payload
+
+
+def _inserts_by_block(snapshot: DrawingSnapshot) -> dict[str, DrawingEntity]:
     return {
         entity.attributes["name"]: entity
         for entity in snapshot.entities
@@ -193,9 +204,7 @@ def _inserts_by_block(snapshot: DrawingSnapshot) -> dict:
 def test_block_attributes_are_captured_under_a_namespaced_key(tmp_path: Path):
     path = tmp_path / "lights.dxf"
     _block_reference_dxf(path)
-    outcome = DrawingEngine().normalize(_source_for(path))
-    assert outcome.success
-    snapshot = outcome.payload
+    snapshot = _snapshot_for(path)
 
     tagged = next(
         entity
@@ -210,7 +219,7 @@ def test_block_attributes_are_captured_under_a_namespaced_key(tmp_path: Path):
 def test_block_reference_without_attributes_gains_no_attribute_keys(tmp_path: Path):
     path = tmp_path / "lights.dxf"
     _block_reference_dxf(path)
-    snapshot = DrawingEngine().normalize(_source_for(path)).payload
+    snapshot = _snapshot_for(path)
     plain = next(
         entity
         for entity in snapshot.entities
@@ -224,7 +233,7 @@ def test_block_reference_without_attributes_gains_no_attribute_keys(tmp_path: Pa
 def test_nested_block_references_are_recorded_not_silently_flattened(tmp_path: Path):
     path = tmp_path / "lights.dxf"
     _block_reference_dxf(path)
-    snapshot = DrawingEngine().normalize(_source_for(path)).payload
+    snapshot = _snapshot_for(path)
 
     nested = _inserts_by_block(snapshot)["TYPICAL_PAIR"]
     assert nested.attributes["block_nested_inserts"] == "2"
@@ -239,7 +248,7 @@ def test_nested_block_references_are_recorded_not_silently_flattened(tmp_path: P
 def test_drawings_without_unresolved_references_report_zero(tmp_path: Path):
     path = tmp_path / "apron.dxf"
     _rich_dxf(path)
-    snapshot = DrawingEngine().normalize(_source_for(path)).payload
+    snapshot = _snapshot_for(path)
     assert snapshot.metadata["xref_references"] == "0"
     assert snapshot.metadata["nested_block_references"] == "0"
 
@@ -258,7 +267,7 @@ def test_external_references_are_flagged_as_unresolved(tmp_path: Path):
     )
     document.saveas(path)
 
-    snapshot = DrawingEngine().normalize(_source_for(path)).payload
+    snapshot = _snapshot_for(path)
     reference = _inserts_by_block(snapshot)["SURVEY_BASE"]
     assert reference.attributes["block_is_xref"] == "true"
     assert snapshot.metadata["xref_references"] == "1"
