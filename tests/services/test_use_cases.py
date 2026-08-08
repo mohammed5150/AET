@@ -4,11 +4,16 @@ from pathlib import Path
 
 from app.core.config import AppConfig
 from app.models.asset import Asset, AssetRelation
+from app.modules.reporting_engine import FileArtifactStore
 from app.services.use_cases import ApplicationService
 
 
+def _service(base_dir: Path) -> ApplicationService:
+    return ApplicationService(artifact_store=FileArtifactStore(base_dir / "reports"))
+
+
 def _project_with_drawing(dxf_file: Path) -> tuple[ApplicationService, str]:
-    service = ApplicationService()
+    service = _service(dxf_file.parent)
     project = service.create_project("Taxiway Kilo").payload
     assert project is not None
     assert service.import_drawing(project.project_id, dxf_file).success
@@ -56,7 +61,7 @@ def test_import_asset_registry_persists_assets(tmp_path: Path):
     sheet.append(["HH.A.001", "AGL PIT", "AUX"])
     workbook.save(registry)
 
-    service = ApplicationService()
+    service = _service(tmp_path)
     project = service.create_project("Registry Demo").payload
     assert project is not None
     outcome = service.import_asset_registry(project.project_id, registry)
@@ -232,3 +237,43 @@ def test_full_workflow_happy_path(dxf_file: Path):
     assert report.report_type == "project-summary"
     assert artifacts and artifacts[0].format_name == "markdown"
     assert "Taxiway Kilo" in artifacts[0].content
+    written = Path(artifacts[0].location)
+    assert written.is_file()
+    assert written.name == "project-summary-v1.md"
+    assert "Taxiway Kilo" in written.read_text(encoding="utf-8")
+
+
+def test_report_versions_increment(dxf_file: Path):
+    service, project_id = _project_with_drawing(dxf_file)
+    first = service.generate_report(project_id)
+    second = service.generate_report(project_id)
+    assert first.payload is not None and second.payload is not None
+    assert first.payload[0].version == 1
+    assert second.payload[0].version == 2
+    assert Path(first.payload[1][0].location).is_file()
+    assert Path(second.payload[1][0].location).is_file()
+    assert first.payload[1][0].location != second.payload[1][0].location
+
+
+def test_generate_report_without_saving(dxf_file: Path):
+    service, project_id = _project_with_drawing(dxf_file)
+    reported = service.generate_report(project_id, save=False)
+    assert reported.success and reported.payload is not None
+    assert reported.payload[1][0].location == ""
+    assert not (dxf_file.parent / "reports").exists()
+
+
+def test_storage_failure_is_infrastructure_error(dxf_file: Path):
+    from app.core.errors import InfrastructureError
+
+    class BrokenStore:
+        def save(self, project, report, artifact) -> str:
+            raise InfrastructureError("disk full")
+
+    service = ApplicationService(artifact_store=BrokenStore())
+    project = service.create_project("Broken Store").payload
+    assert project is not None
+    outcome = service.generate_report(project.project_id)
+    assert not outcome.success
+    assert outcome.error_code == "INFRASTRUCTURE_ERROR"
+    assert service._repos.reports.list() == []
