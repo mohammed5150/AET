@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.core.config import AppConfig
 from app.models.asset import Asset, AssetRelation
+from app.models.geometry import Coordinate
 from app.services.use_cases import ApplicationService
 
 
@@ -101,7 +102,7 @@ def _asset(service: ApplicationService, project_id: str, name: str) -> Asset:
         snapshot_id="",
         asset_type="light-fitting",
         name=name,
-        location={"utm_e": "1", "utm_n": "2"},
+        location=Coordinate(easting=1.0, northing=2.0, zone="40 N"),
     )
     service.repositories.assets.add(asset)
     return asset

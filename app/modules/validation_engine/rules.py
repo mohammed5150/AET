@@ -52,11 +52,7 @@ class AssetLocationRule:
     description = "Every asset has UTM coordinates"
 
     def evaluate(self, context) -> list[ValidationResult]:
-        missing = [
-            asset.name
-            for asset in context.assets
-            if not (asset.location.get("utm_e") and asset.location.get("utm_n"))
-        ]
+        missing = [asset.name for asset in context.assets if asset.location is None]
         return [
             _finding(
                 self.rule_id,

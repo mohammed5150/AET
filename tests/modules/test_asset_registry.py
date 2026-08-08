@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from app.models.geometry import Coordinate, parse_coordinate
 from app.models.project import SourceInput
 from app.modules.asset_engine import (
     RegistryColumnMap,
@@ -110,11 +111,9 @@ def test_registry_rows_become_classified_assets(tmp_path: Path):
     assert fitting.attributes["asset_class"] == "ADB-BI-GG-S-INSET-8IN-2x40W"
     assert fitting.attributes["main_area"] == "ST"
     assert fitting.attributes["serial_number"] == "SN-1"
-    assert fitting.location == {
-        "utm_zone": "40 N",
-        "utm_e": "261833.45",
-        "utm_n": "2703563.93",
-    }
+    assert fitting.location == Coordinate(
+        easting=261833.45, northing=2703563.93, zone="40 N"
+    )
     assert fitting.snapshot_id == ""
     assert fitting.attributes["registry_input_id"]
 
@@ -124,7 +123,7 @@ def test_registry_rows_become_classified_assets(tmp_path: Path):
     assert by_name["SBC13L.06.021"].attributes["circuit"] == "SBC13L"
     assert by_name["RRM.1"].asset_type == "rrm"
     assert by_name["SIGN.01"].asset_type == "sign"
-    assert by_name["SIGN.01"].location == {}
+    assert by_name["SIGN.01"].location is None
     assert by_name["EL.NBASE.13088"].asset_type == "base"
 
 
@@ -231,3 +230,49 @@ def test_name_based_fallback(asset_class: str, name: str, expected: str):
 )
 def test_circuit_derivation(name: str, expected: dict):
     assert derive_circuit(name) == expected
+
+
+def test_unusable_ordinates_keep_the_row_and_preserve_the_raw_values(tmp_path: Path):
+    # SDS-009 §5.4: a bad cell degrades one field, it does not reject the row.
+    path = _registry(
+        tmp_path / "bad-coords.xlsx",
+        rows=[
+            [
+                1,
+                "TCC1.01",
+                "AGL PIT",
+                "ST",
+                "E4N",
+                "40 N",
+                "not-a-number",
+                "2703",
+                None,
+            ],
+            [2, "TCC1.02", "AGL PIT", "ST", "E4N", "40 N", "nan", "2703", None],
+            [3, "TCC1.03", "AGL PIT", "ST", "E4N", "40 N", None, None, None],
+        ],
+    )
+    result = XlsxAssetRegistryReader().read(_source(path))
+    assert result.skipped_rows == 0
+    by_name = {asset.name: asset for asset in result.assets}
+    assert len(by_name) == 3
+
+    unparsed = by_name["TCC1.01"]
+    assert unparsed.location is None
+    assert unparsed.attributes["utm_unparsed"] == "not-a-number|2703"
+    assert unparsed.attributes["utm_zone"] == "40 N"
+
+    # "nan" parses as a float but is not a position (SDS-009 §5.3).
+    assert by_name["TCC1.02"].location is None
+    assert by_name["TCC1.02"].attributes["utm_unparsed"] == "nan|2703"
+
+    # Genuinely absent ordinates are not "unparsed", just missing.
+    absent = by_name["TCC1.03"]
+    assert absent.location is None
+    assert "utm_unparsed" not in absent.attributes
+    assert absent.attributes["utm_zone"] == "40 N"
+
+
+def test_elevation_is_not_read_from_the_default_export():
+    # The AUH export carries no elevation column; assets stay planar.
+    assert parse_coordinate("1", "2").elevation is None
