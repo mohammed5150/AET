@@ -96,7 +96,11 @@ class RulePackPlugin(Plugin):
 
 def test_real_dxf_flow_with_default_wiring(dxf_file: Path):
     """SDS-003: a real DXF file flows through the default service wiring."""
-    service = ApplicationService()
+    from app.modules.reporting_engine import FileArtifactStore
+
+    service = ApplicationService(
+        artifact_store=FileArtifactStore(dxf_file.parent / "reports")
+    )
     project = service.create_project("DXF Demo").payload
     assert project is not None
     assert service.import_drawing(project.project_id, dxf_file).success
@@ -117,11 +121,14 @@ def test_dwg_to_report_flow_with_plugin_rule(tmp_path: Path):
     plugins = PluginRuntime()
     assert plugins.register(RulePackPlugin()).success
 
+    from app.modules.reporting_engine import FileArtifactStore
+
     service = ApplicationService(
         ingestion=IngestionEngine(),
         drawing=DrawingEngine(interpreter=FakeInterpreter()),
         assets=AssetEngine(extractor=FakeExtractor()),
         plugins=plugins,
+        artifact_store=FileArtifactStore(tmp_path / "reports"),
     )
 
     project = service.create_project("ZIA Apron Z2").payload

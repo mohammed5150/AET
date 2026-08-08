@@ -66,14 +66,17 @@ def _run(args: argparse.Namespace) -> int:
         return 1
     print(f"Validation findings: {len(validated.payload.results)}")
 
-    reported = service.generate_report(project.project_id)
+    reported = service.generate_report(project.project_id, save=not args.no_save)
     if not reported.success or reported.payload is None:
         _print_failure(reported)
         return 1
     _, artifacts = reported.payload
     for artifact in artifacts:
-        print()
-        print(artifact.content)
+        if artifact.location:
+            print(f"Report written: {artifact.location}")
+        else:
+            print()
+            print(artifact.content)
     return 0
 
 
@@ -94,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--assets",
         default=None,
         help="Asset registry .xlsx to import after drawing processing",
+    )
+    run_parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Print the report to stdout instead of writing it to output/",
     )
     run_parser.set_defaults(handler=_run)
 
