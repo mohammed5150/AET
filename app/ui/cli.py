@@ -12,24 +12,45 @@ import sys
 from pathlib import Path
 
 from app import __version__
+from app.core.config import AppConfig
+from app.core.errors import AETError
+from app.core.logging import LEVEL_NAMES, configure_logging
 from app.core.outcome import Outcome
+from app.services.persistence import attach_audit_sink
 from app.services.use_cases import ApplicationService
 
 
-def build_service() -> ApplicationService:
-    """Wire the default application service."""
-    return ApplicationService()
+def build_service(config: AppConfig | None = None) -> ApplicationService:
+    """Wire the default application service and its audit store sink."""
+    service = ApplicationService(config=config or AppConfig.from_env())
+    attach_audit_sink(service.repositories)
+    return service
+
+
+def resolve_config(args: argparse.Namespace) -> AppConfig:
+    """Layer CLI flags over the environment-resolved configuration."""
+    return AppConfig.from_env().with_overrides(
+        log_level=args.log_level,
+        log_dir=Path(args.log_dir) if args.log_dir else None,
+        data_dir=Path(args.data_dir) if args.data_dir else None,
+    )
+
+
+def _print_error(code: str, message: str, remediation: str | None = None) -> None:
+    text = f"error [{code}]: {message}"
+    if remediation:
+        text = f"{text}\nhint: {remediation}"
+    print(text, file=sys.stderr)
 
 
 def _print_failure(outcome: Outcome) -> None:
-    message = f"error [{outcome.error_code}]: {outcome.message}"
-    if outcome.remediation:
-        message = f"{message}\nhint: {outcome.remediation}"
-    print(message, file=sys.stderr)
+    _print_error(
+        outcome.error_code or "AET_ERROR", outcome.message, outcome.remediation
+    )
 
 
-def _run(args: argparse.Namespace) -> int:
-    service = build_service()
+def _run(args: argparse.Namespace, config: AppConfig) -> int:
+    service = build_service(config)
     created = service.create_project(args.name)
     if not created.success or created.payload is None:
         _print_failure(created)
@@ -82,6 +103,21 @@ def build_parser() -> argparse.ArgumentParser:
         prog="aet",
         description="Airfield Ground Lighting Engineering Toolkit",
     )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        help=f"Log verbosity ({', '.join(LEVEL_NAMES)}); overrides AET_LOG_LEVEL",
+    )
+    parser.add_argument(
+        "--log-dir",
+        default=None,
+        help="Directory for aet.log and audit.log; overrides AET_LOG_DIR",
+    )
+    parser.add_argument(
+        "--data-dir",
+        default=None,
+        help="Directory for generated artifacts; overrides AET_DATA_DIR",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser(
@@ -98,15 +134,24 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.set_defaults(handler=_run)
 
     version_parser = subparsers.add_parser("version", help="Show the AET version")
-    version_parser.set_defaults(
-        handler=lambda args: (print(f"aet {__version__}"), 0)[1]
-    )
+    version_parser.set_defaults(handler=_version)
     return parser
+
+
+def _version(args: argparse.Namespace, config: AppConfig) -> int:
+    print(f"aet {__version__}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        config = resolve_config(args)
+        configure_logging(config)
+    except AETError as error:
+        _print_error(error.code, str(error), error.remediation)
+        return 1
+    return args.handler(args, config)
 
 
 if __name__ == "__main__":

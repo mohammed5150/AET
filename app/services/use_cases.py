@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.core.config import AppConfig
 from app.core.errors import InputError, WorkflowError
 from app.core.logging import StructuredLogger, get_logger
 from app.core.outcome import Outcome
 from app.core.plugins import PluginCategory, PluginRuntime
+from app.models.asset import Asset, AssetRelation
+from app.models.drawing import DrawingSnapshot
 from app.models.project import Project, SourceInput
 from app.models.report import Report, ReportArtifact, ReportRequest
+from app.models.validation import ValidationResult
 from app.modules.asset_engine import AssetEngine, XlsxAssetRegistryReader
 from app.modules.asset_engine.registry import RegistryImport
 from app.modules.drawing_engine import DrawingEngine
@@ -54,18 +58,30 @@ class ApplicationService:
         reporting: ReportingEngine | None = None,
         plugins: PluginRuntime | None = None,
         logger: StructuredLogger | None = None,
+        config: AppConfig | None = None,
     ) -> None:
+        self._config = config or AppConfig()
         self._repos = repositories or in_memory_repositories()
         self._ingestion = ingestion or IngestionEngine()
         self._drawing = drawing or DrawingEngine()
         self._assets = assets or AssetEngine()
         self._validation = validation or ValidationEngine()
         self._reporting = reporting or ReportingEngine()
-        self._plugins = plugins or PluginRuntime()
+        self._plugins = plugins or PluginRuntime(config=self._config)
         self._logger = logger or get_logger("application")
         self._pipeline = ProcessingPipeline(self._logger)
         for registered in self._plugins.extensions(PluginCategory.DRAWING_INTERPRETER):
             self._drawing.registry.register_extension(registered.extension)
+
+    @property
+    def config(self) -> AppConfig:
+        """Resolved configuration this service was wired with."""
+        return self._config
+
+    @property
+    def repositories(self) -> Repositories:
+        """Repositories backing this service (SDS-002 §8.9)."""
+        return self._repos
 
     # -- use case: create project -----------------------------------------
 
@@ -235,19 +251,12 @@ class ApplicationService:
         all_rules = list(rules) if rules is not None else standard_rules()
         for registered in self._plugins.extensions(PluginCategory.VALIDATION_RULE):
             all_rules.append(registered.extension)  # type: ignore[arg-type]
+        project_assets = self._assets_for(project_id)
         context = ValidationContext(
             project=project,
-            snapshots=[
-                snapshot
-                for snapshot in self._repos.snapshots.list()
-                if snapshot.project_id == project_id
-            ],
-            assets=[
-                asset
-                for asset in self._repos.assets.list()
-                if asset.project_id == project_id
-            ],
-            relations=self._repos.relations.list(),
+            snapshots=self._snapshots_for(project_id),
+            assets=project_assets,
+            relations=self._relations_among(project_assets),
         )
         outcome = self._validation.run(
             context, all_rules, correlation_id=correlation_id
@@ -278,17 +287,9 @@ class ApplicationService:
         view = self._reporting.compose(
             project=project,
             sources=self._sources_for(project_id),
-            snapshots=[
-                snapshot
-                for snapshot in self._repos.snapshots.list()
-                if snapshot.project_id == project_id
-            ],
-            assets=[
-                asset
-                for asset in self._repos.assets.list()
-                if asset.project_id == project_id
-            ],
-            results=self._repos.validation_results.list(),
+            snapshots=self._snapshots_for(project_id),
+            assets=self._assets_for(project_id),
+            results=self._validation_results_for(project_id),
         )
         request = ReportRequest(project_id=project_id, report_type=report_type)
         outcome = self._reporting.generate(
@@ -303,11 +304,61 @@ class ApplicationService:
 
     # -- helpers -----------------------------------------------------------
 
+    # Every read below is scoped to one project. Repositories span all
+    # projects, so an unscoped list() would leak another project's data into
+    # this project's validation context or report.
+
     def _sources_for(self, project_id: str) -> list[SourceInput]:
         return [
             source
             for source in self._repos.sources.list()
             if source.project_id == project_id
+        ]
+
+    def _snapshots_for(self, project_id: str) -> list[DrawingSnapshot]:
+        return [
+            snapshot
+            for snapshot in self._repos.snapshots.list()
+            if snapshot.project_id == project_id
+        ]
+
+    def _assets_for(self, project_id: str) -> list[Asset]:
+        return [
+            asset
+            for asset in self._repos.assets.list()
+            if asset.project_id == project_id
+        ]
+
+    def _relations_among(self, assets: list[Asset]) -> list[AssetRelation]:
+        """Relations whose both endpoints are assets of the same project.
+
+        A relation carries no project of its own; it belongs to a project
+        through the assets it links (SDS-002 §9.3). Requiring both endpoints
+        keeps a relation that spans projects out of either project's context
+        rather than showing it in both.
+        """
+        asset_ids = {asset.asset_id for asset in assets}
+        return [
+            relation
+            for relation in self._repos.relations.list()
+            if relation.from_asset_id in asset_ids and relation.to_asset_id in asset_ids
+        ]
+
+    def _validation_results_for(self, project_id: str) -> list[ValidationResult]:
+        """Findings emitted by validation runs of one project.
+
+        A finding references its run, not its project, so the project's runs
+        are resolved first (SDS-002 §9.3).
+        """
+        run_ids = {
+            run.run_id
+            for run in self._repos.validation_runs.list()
+            if run.project_id == project_id
+        }
+        return [
+            result
+            for result in self._repos.validation_results.list()
+            if result.run_id in run_ids
         ]
 
     def _unknown_project(self, project_id: str, correlation_id: str) -> Outcome:

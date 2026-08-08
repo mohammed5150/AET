@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from app.core.config import AppConfig
+from app.models.asset import Asset, AssetRelation
 from app.services.use_cases import ApplicationService
 
 
@@ -91,6 +93,124 @@ def test_validate_default_runs_standard_pack(dxf_file: Path):
     opted_out = service.validate_project(project_id, rules=[])
     assert opted_out.success and opted_out.payload is not None
     assert opted_out.payload.results == []
+
+
+def _asset(service: ApplicationService, project_id: str, name: str) -> Asset:
+    asset = Asset(
+        project_id=project_id,
+        snapshot_id="",
+        asset_type="light-fitting",
+        name=name,
+        location={"utm_e": "1", "utm_n": "2"},
+    )
+    service.repositories.assets.add(asset)
+    return asset
+
+
+def _two_projects() -> tuple[ApplicationService, str, str]:
+    service = ApplicationService()
+    first = service.create_project("Taxiway Kilo").payload
+    second = service.create_project("Taxiway Lima").payload
+    assert first is not None and second is not None
+    return service, first.project_id, second.project_id
+
+
+def test_validation_context_excludes_another_projects_relations():
+    # Relations carry no project of their own; an unscoped read would put
+    # Lima's relations into Kilo's validation context.
+    service, kilo, lima = _two_projects()
+    lima_relation = AssetRelation(
+        relation_type="feeds",
+        from_asset_id=_asset(service, lima, "LIC1-01/001").asset_id,
+        to_asset_id=_asset(service, lima, "LIC1-01/002").asset_id,
+    )
+    service.repositories.relations.add(lima_relation)
+    kilo_relation = AssetRelation(
+        relation_type="feeds",
+        from_asset_id=_asset(service, kilo, "TCC1-01/001").asset_id,
+        to_asset_id=_asset(service, kilo, "TCC1-01/002").asset_id,
+    )
+    service.repositories.relations.add(kilo_relation)
+
+    captured = []
+
+    class _RelationSpy:
+        rule_id = "spy.relations"
+        description = "Captures the relations a rule can see"
+
+        def evaluate(self, context):
+            captured.append(list(context.relations))
+            return []
+
+    assert service.validate_project(kilo, rules=[_RelationSpy()]).success
+    assert captured == [[kilo_relation]]
+
+
+def test_validation_context_excludes_relations_spanning_projects():
+    service, kilo, lima = _two_projects()
+    service.repositories.relations.add(
+        AssetRelation(
+            relation_type="feeds",
+            from_asset_id=_asset(service, kilo, "TCC1-01/001").asset_id,
+            to_asset_id=_asset(service, lima, "LIC1-01/001").asset_id,
+        )
+    )
+
+    captured = []
+
+    class _RelationSpy:
+        rule_id = "spy.relations"
+        description = "Captures the relations a rule can see"
+
+        def evaluate(self, context):
+            captured.append(list(context.relations))
+            return []
+
+    assert service.validate_project(kilo, rules=[_RelationSpy()]).success
+    assert captured == [[]]
+
+
+def test_report_excludes_another_projects_findings():
+    # Findings reference their run, not their project; an unscoped read would
+    # print Lima's findings in Kilo's report.
+    service, kilo, lima = _two_projects()
+    _asset(service, lima, "LIC1-01/001")
+    _asset(service, lima, "LIC1-01/001")  # duplicate name -> ERROR finding
+    assert service.validate_project(lima).success
+    assert service.validate_project(kilo).success
+
+    reported = service.generate_report(kilo)
+    assert reported.success and reported.payload is not None
+    content = reported.payload[1][0].content
+    assert "Duplicate asset names found" not in content
+    assert "All asset names unique" in content
+    assert "LIC1-01/001" not in content
+
+    lima_report = service.generate_report(lima)
+    assert lima_report.success and lima_report.payload is not None
+    assert "Duplicate asset names found" in lima_report.payload[1][0].content
+
+
+def test_report_counts_only_the_projects_own_assets():
+    service, kilo, lima = _two_projects()
+    _asset(service, kilo, "TCC1-01/001")
+    _asset(service, lima, "LIC1-01/001")
+    _asset(service, lima, "LIC1-01/002")
+
+    reported = service.generate_report(kilo)
+    assert reported.success and reported.payload is not None
+    assert "light-fitting: 1" in reported.payload[1][0].content
+
+
+def test_service_exposes_the_configuration_it_was_wired_with():
+    config = AppConfig(log_level="DEBUG", data_dir=Path("/srv/artifacts"))
+    service = ApplicationService(config=config)
+    assert service.config is config
+    assert service.config.data_dir == Path("/srv/artifacts")
+
+
+def test_service_defaults_to_a_usable_configuration():
+    assert ApplicationService().config == AppConfig()
 
 
 def test_full_workflow_happy_path(dxf_file: Path):
