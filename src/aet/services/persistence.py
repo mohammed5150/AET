@@ -22,6 +22,11 @@ from aet.core.logging import AUDIT_LOGGER_NAME
 from aet.models.asset import Asset, AssetRelation
 from aet.models.drawing import DrawingSnapshot
 from aet.models.project import Project, SourceInput
+from aet.models.reference import (
+    ReferenceDocument,
+    ReferenceEdition,
+    ReferenceRevision,
+)
 from aet.models.report import Report, ReportArtifact
 from aet.models.validation import ValidationResult, ValidationRun
 
@@ -112,6 +117,12 @@ class Repositories:
     validation_results: Repository[ValidationResult]
     reports: Repository[Report]
     report_artifacts: Repository[ReportArtifact]
+    # The reference library is project-independent: the same ICAO Annex
+    # governs every project, so these entities carry no project and a
+    # project-scoped read returns none of them (SDS-016 §12.1).
+    reference_documents: Repository[ReferenceDocument]
+    reference_editions: Repository[ReferenceEdition]
+    reference_revisions: Repository[ReferenceRevision]
     audit: AuditTrail = field(default_factory=InMemoryAuditTrail)
 
     @property
@@ -187,4 +198,7 @@ def in_memory_repositories() -> Repositories:
         validation_results=InMemoryRepository(lambda item: item.result_id),
         reports=InMemoryRepository(lambda item: item.report_id),
         report_artifacts=InMemoryRepository(lambda item: item.artifact_id),
+        reference_documents=InMemoryRepository(lambda item: item.reference_id),
+        reference_editions=InMemoryRepository(lambda item: item.edition_id),
+        reference_revisions=InMemoryRepository(lambda item: item.revision_id),
     )

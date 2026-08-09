@@ -3,6 +3,7 @@
 from aet.models.asset import Asset
 from aet.models.drawing import DrawingSnapshot
 from aet.models.project import Project, SourceInput
+from aet.models.reference import ReferenceAuthority, ReferenceCitation
 from aet.models.report import ReportRequest
 from aet.models.validation import RunStatus, Severity, ValidationResult
 from aet.modules.asset_engine import AssetCollection, AssetEngine
@@ -118,6 +119,46 @@ def test_reporting_engine_composes_and_renders_markdown():
     assert artifacts[0].format_name == "markdown"
     assert "Runway 13R" in artifacts[0].content
     assert "Spacing exceeds limit" in artifacts[0].content
+
+
+def test_a_report_carries_the_reference_a_finding_cites():
+    """SDS-016 §12.2: the citation reaches the engineering report."""
+    project = Project(name="Taxiway Kilo")
+    citation = ReferenceCitation(
+        reference_id="ref-1",
+        document_number="Annex 14 Vol I",
+        authority=ReferenceAuthority.ICAO,
+        edition="8th Edition",
+        revision="Amendment 17",
+        clause="5.3.17.5",
+    )
+    finding = ValidationResult(
+        rule_id="agl.spacing",
+        severity=Severity.WARNING,
+        passed=False,
+        message="Spacing exceeds the configured criterion",
+        citation=citation,
+    )
+    engine = ReportingEngine()
+    view = engine.compose(project, [], [], [], [finding])
+    assert view.findings[0].reference == str(citation)
+    rendered = MarkdownFormatter().render(view)
+    assert "| Rule | Severity | Status | Message | Reference |" in rendered
+    assert "clause 5.3.17.5" in rendered
+
+
+def test_a_report_of_uncited_findings_grows_no_empty_reference_column():
+    project = Project(name="Taxiway Kilo")
+    finding = ValidationResult(
+        rule_id="agl.asset.location",
+        severity=Severity.WARNING,
+        passed=False,
+        message="Assets are missing UTM coordinates",
+    )
+    engine = ReportingEngine()
+    view = engine.compose(project, [], [], [], [finding])
+    assert view.findings[0].reference == ""
+    assert "Reference" not in MarkdownFormatter().render(view)
 
 
 def test_reporting_engine_fails_cleanly_on_formatter_error():

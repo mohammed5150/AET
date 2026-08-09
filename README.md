@@ -18,6 +18,7 @@ docs/                 # Documentation
 ├── SDS/              # Software Design Specifications
 ├── ADR/              # Architecture Decision Records
 ├── Standards/        # Coding and engineering standards
+├── Reference/        # How AET refers to authoritative references (no documents)
 └── Images/           # Documentation images and diagrams
 
 tests/                # Test suite
@@ -41,6 +42,24 @@ validation rules, and report providers.
 
 How SDS-002 modules map onto this repository's layout is recorded in
 [ADR-001](docs/ADR/ADR-001-sds-002-package-mapping.md).
+
+## Engineering References
+
+Validation criteria are traceable to the documents that state them — ICAO,
+UAE GCAA, EASA, FAA, aerodrome design standards, manufacturers' manuals,
+project specifications. The reference library
+([SDS-016](docs/SDS/SDS-016-Engineering-Reference-and-Standards-Architecture.md))
+catalogues those documents with their editions, revisions, effective dates,
+applicability, and licence position, so a validation finding can cite the
+exact revision and clause it was judged against — and so amending the
+catalogue later cannot rewrite what an executed run relied on.
+
+AET records **where** a reference document is and never holds one: no
+download, no copy, no parsing, no redistribution
+([ADR-003](docs/ADR/ADR-003-controlled-reference-documents.md)). No
+engineering limit is shipped; the criteria themselves belong to a controlled
+module that SDS-016 §16 defers deliberately, for the reason
+[SDS-012](docs/SDS/SDS-012-AGL-Engineering-Rules.md) §4 gives.
 
 Run the whole pipeline in one shot:
 
