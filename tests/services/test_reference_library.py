@@ -12,6 +12,8 @@ from aet.models.reference import (
     ApplicabilityDimension,
     ApplicabilityVerdict,
     LicenceStatus,
+    LocatorKind,
+    LocatorPart,
     ReferenceApplicability,
     ReferenceAuthority,
     ReferenceDocument,
@@ -367,6 +369,40 @@ def test_a_citation_is_assembled_from_the_stored_records(library):
     assert str(citation).startswith("ICAO Annex 14 Vol I, 8th Edition")
 
 
+def test_a_citation_carries_a_full_locator_path(library):
+    """§8.5: the nine-level case, to the depth the publisher actually has."""
+    _, _, revision = _catalogue(library)
+    outcome = library.cite(
+        revision.revision_id,
+        location=[
+            LocatorPart(LocatorKind.CHAPTER, "5"),
+            LocatorPart(LocatorKind.SECTION, "5.3"),
+            LocatorPart(LocatorKind.SUBSECTION, "5.3.17"),
+            LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5"),
+        ],
+        criterion_id="AGL-C-1",
+    )
+    assert outcome.success
+    citation = outcome.payload
+    assert citation is not None
+    assert citation.location[0] == LocatorPart(LocatorKind.CHAPTER, "5")
+    assert citation.location[-1].value == "5.3.17.5"
+    assert citation.criterion_id == "AGL-C-1"
+    assert str(citation).endswith("Chapter 5, §5.3, §5.3.17, para. 5.3.17.5")
+
+
+def test_citing_a_location_two_ways_fails_as_an_outcome_not_an_exception(library):
+    _, _, revision = _catalogue(library)
+    outcome = library.cite(
+        revision.revision_id,
+        section="5.3.17",
+        location=[LocatorPart(LocatorKind.CLAUSE, "5.3.17.5")],
+    )
+    assert not outcome.success
+    assert outcome.remediation
+    assert "not both" in outcome.message
+
+
 def test_a_superseded_revision_can_still_be_cited(library):
     document, edition, amendment_17 = _catalogue(library)
     amendment_18 = _amendment_18(library, document, edition)
@@ -568,6 +604,82 @@ def test_a_persisted_finding_keeps_its_citation(tmp_path):
     assert stored.citation == citation
     assert stored.citation is not None
     assert stored.citation.authority is ReferenceAuthority.ICAO
+
+
+def test_a_locator_path_round_trips_as_typed_parts(tmp_path):
+    repositories = sqlite_repositories(connect(tmp_path / "aet.db"))
+    library = ReferenceLibrary(repositories)
+    _, _, revision = _catalogue(library)
+    citation = library.cite(
+        revision.revision_id,
+        location=[
+            LocatorPart(LocatorKind.CHAPTER, "5"),
+            LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5"),
+        ],
+    ).payload
+    finding = ValidationResult(
+        rule_id="agl.spacing",
+        severity=Severity.WARNING,
+        passed=False,
+        message="m",
+        citation=citation,
+    )
+    repositories.validation_results.add(finding)
+
+    stored = sqlite_repositories(connect(tmp_path / "aet.db")).validation_results.get(
+        finding.result_id
+    )
+    assert stored is not None
+    assert stored.citation == citation
+    assert stored.citation is not None
+    assert isinstance(stored.citation.location[0], LocatorPart)
+    assert stored.citation.location[0].kind is LocatorKind.CHAPTER
+
+
+def test_a_citation_stored_before_the_locator_path_existed_still_reads(tmp_path):
+    """§8.5.3: historical snapshots keep their meaning and their rendering.
+
+    Simulates a row written by the previous schema — a citation document with
+    no ``location`` key at all — which SDS-013 §4.2 says must take the field's
+    default rather than failing.
+    """
+    legacy_document = {
+        "rule_id": "agl.spacing",
+        "severity": "warning",
+        "passed": False,
+        "message": "Spacing exceeds the configured criterion",
+        "asset_id": None,
+        "evidence": {"samples": "TEC102-01/067"},
+        "citation": {
+            "reference_id": "ref-1",
+            "document_number": "Annex 14 Vol I",
+            "authority": "icao",
+            "edition": "8th Edition",
+            "revision": "Amendment 17",
+            "revision_id": "rev-17",
+            "section": "5.3.17",
+            "clause": "5.3.17.5",
+            "criterion_id": "",
+        },
+        "run_id": "run-1",
+        "result_id": "res-1",
+        "executed_at": "2026-01-01T00:00:00+00:00",
+    }
+    restored = from_document(ValidationResult, legacy_document)
+    assert restored.citation is not None
+    assert restored.citation.location == ()
+    assert restored.citation.section == "5.3.17"
+    assert restored.citation.clause == "5.3.17.5"
+    # Read through the one accessor, it is the same ordered path a new
+    # citation would carry, and it renders exactly as it did when written.
+    assert restored.citation.resolved_location == (
+        LocatorPart(LocatorKind.SECTION, "5.3.17"),
+        LocatorPart(LocatorKind.CLAUSE, "5.3.17.5"),
+    )
+    assert str(restored.citation) == (
+        "ICAO Annex 14 Vol I, 8th Edition, Rev Amendment 17, "
+        "§5.3.17, clause 5.3.17.5"
+    )
 
 
 def test_a_finding_without_a_citation_claims_none():

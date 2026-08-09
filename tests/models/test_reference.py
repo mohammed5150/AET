@@ -11,6 +11,8 @@ from aet.models.reference import (
     ApplicabilityDimension,
     ApplicabilityVerdict,
     LicenceStatus,
+    LocatorKind,
+    LocatorPart,
     ReferenceApplicability,
     ReferenceAuthority,
     ReferenceCitation,
@@ -325,6 +327,98 @@ def test_a_citation_omits_the_parts_it_does_not_have():
         revision="",
     )
     assert str(citation) == "UAE GCAA CAR Part IX, Issue 5"
+
+
+def _icao_citation(**overrides: object) -> ReferenceCitation:
+    values: dict[str, object] = {
+        "reference_id": "ref-1",
+        "document_number": "Annex 14 Vol I",
+        "authority": ReferenceAuthority.ICAO,
+        "edition": "8th Edition",
+        "revision": "Amendment 17",
+    }
+    values.update(overrides)
+    return ReferenceCitation(**values)  # type: ignore[arg-type]
+
+
+def test_a_locator_path_renders_in_the_order_it_was_recorded():
+    """§8.5: depth is the publisher's, not a fixed set of columns."""
+    citation = _icao_citation(
+        location=(
+            LocatorPart(LocatorKind.CHAPTER, "5"),
+            LocatorPart(LocatorKind.SECTION, "5.3"),
+            LocatorPart(LocatorKind.SUBSECTION, "5.3.17"),
+            LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5"),
+        )
+    )
+    assert str(citation) == (
+        "ICAO Annex 14 Vol I, 8th Edition, Rev Amendment 17, "
+        "Chapter 5, §5.3, §5.3.17, para. 5.3.17.5"
+    )
+
+
+def test_a_locator_path_carries_a_structure_that_does_not_decompose():
+    """An EASA rule reference is one token, not a chapter/section tree."""
+    citation = ReferenceCitation(
+        reference_id="ref-2",
+        document_number="CS-ADR-DSN",
+        authority=ReferenceAuthority.EASA,
+        edition="Issue 6",
+        revision="Amendment 1",
+        location=(
+            LocatorPart(LocatorKind.OTHER, "CS ADR-DSN.M.615"),
+            LocatorPart(LocatorKind.ITEM, "(a)"),
+        ),
+    )
+    assert str(citation) == (
+        "EASA CS-ADR-DSN, Issue 6, Rev Amendment 1, CS ADR-DSN.M.615, item (a)"
+    )
+
+
+def test_a_locator_path_reaches_a_table_or_appendix():
+    citation = _icao_citation(
+        location=(
+            LocatorPart(LocatorKind.APPENDIX, "2"),
+            LocatorPart(LocatorKind.TABLE, "A2-1"),
+        )
+    )
+    assert "Appendix 2, Table A2-1" in str(citation)
+
+
+def test_the_section_clause_shorthand_still_renders_as_it_always_did():
+    """Regression pin: stored citations predate the locator path."""
+    citation = _icao_citation(section="5.3.17", clause="5.3.17.5")
+    assert str(citation).endswith("§5.3.17, clause 5.3.17.5")
+
+
+def test_the_shorthand_resolves_into_the_same_ordered_path():
+    citation = _icao_citation(section="5.3.17", clause="5.3.17.5")
+    assert citation.resolved_location == (
+        LocatorPart(LocatorKind.SECTION, "5.3.17"),
+        LocatorPart(LocatorKind.CLAUSE, "5.3.17.5"),
+    )
+    # And a path-form citation resolves to itself, so readers need one accessor.
+    path = (LocatorPart(LocatorKind.CLAUSE, "5.3.17.5"),)
+    assert _icao_citation(location=path).resolved_location == path
+    assert _icao_citation().resolved_location == ()
+
+
+def test_stating_the_location_both_ways_is_refused():
+    with pytest.raises(InputError):
+        _icao_citation(
+            section="5.3.17",
+            location=(LocatorPart(LocatorKind.CLAUSE, "5.3.17.5"),),
+        )
+    with pytest.raises(InputError):
+        _icao_citation(
+            clause="5.3.17.5",
+            location=(LocatorPart(LocatorKind.CLAUSE, "5.3.17.5"),),
+        )
+
+
+def test_a_locator_part_stating_no_value_is_refused():
+    with pytest.raises(InputError):
+        LocatorPart(LocatorKind.CHAPTER, "  ")
 
 
 def test_a_citation_is_immutable():

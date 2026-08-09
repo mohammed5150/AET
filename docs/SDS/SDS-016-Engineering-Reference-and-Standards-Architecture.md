@@ -47,7 +47,8 @@ SDS-016 does **not** cover, and §13 explains why:
 | **Obligation** | How binding the material is: mandatory, recommended, guidance, or mixed. |
 | **Applicability** | The conditions under which a reference governs — country, airport, approach category, and so on. |
 | **Criterion** | A single checkable engineering requirement stated by a revision. Deferred (§13.1). |
-| **Citation** | An immutable pointer from a finding to the revision and clause it relied on. |
+| **Citation** | An immutable pointer from a finding to the revision it relied on and the location within it. |
+| **Locator path** | The location, as an ordered sequence of labelled parts — chapter, section, paragraph, table — to whatever depth the publisher uses (§8.5). |
 | **Source** | Where AET knows the document from, and what may lawfully be done with the copy. |
 
 ## 4. The DWG Remains the Single Source of Truth
@@ -167,6 +168,135 @@ mistake §10 exists to prevent.
 Value objects (`ReferenceSource`, `ReferenceApplicability`,
 `ApplicabilityCriterion`, `ReferenceCitation`) are frozen; the three records
 that have a lifecycle are mutable dataclasses, as every other AET entity is.
+
+### 8.5 Locating the exact text
+
+A citation must identify a provision precisely enough that an auditor can turn
+to it years later. That means representing whatever depth the publisher uses —
+volume, part, chapter, section, subsection, paragraph, item, clause, table.
+
+#### 8.5.1 Why not one field per level
+
+Because publishers do not share a hierarchy, and fixed columns would fit one
+and misrepresent the rest:
+
+| Authority | How a provision is actually located |
+| --- | --- |
+| ICAO | `5.3.17.5` — a dotted number that *is* the chapter, section, subsection, and paragraph, in one token |
+| EASA | `CS ADR-DSN.M.615(a)` — a rule reference with an item, and no chapter at all |
+| UAE GCAA | a paragraph nested under a Subpart of a CAR Part |
+| Manufacturer | a part, then a table or figure |
+
+A `chapter` / `subsection` / `paragraph` column set forces the ICAO number to
+be split in a way ICAO does not itself split it, gives EASA nothing to put in
+three of its columns, and still has no room for a table. Columns also carry no
+order, so nothing says whether `section` contains `clause` or the reverse.
+
+#### 8.5.2 The ordered path
+
+`ReferenceCitation.location` is a tuple of `LocatorPart`, each a
+`LocatorKind` and the value the publisher prints, ordered outermost first.
+Depth is the operator's to choose, `LocatorKind.OTHER` carries a locator whose
+form none of the kinds describes, and the order is the containment order — so
+a path is unambiguous about what contains what without any field having to
+imply it.
+
+`section` and `clause` remain as the two-level shorthand: they are the form
+already-stored citations carry, and the common simple case. A citation states
+its location **one way or the other** — supplying both raises `INPUT_ERROR`,
+and through `ReferenceLibrary.cite` it is a failed outcome. Two ways of saying
+where the text is would let one finding cite `clause 5.3.17.5` and another
+cite the same provision as a path, leaving two unequal value objects pointing
+at one clause.
+
+Every reader goes through `resolved_location`, which returns the path either
+way, so the two forms are read, rendered, and compared identically.
+
+#### 8.5.3 What this preserves
+
+`location` is appended after the existing fields and defaults to empty, so:
+
+- a stored citation document with no `location` key takes the default
+  (SDS-013 §4.2) and keeps its `section` and `clause` unchanged;
+- its rendering is byte-for-byte what it was — `§5.3.17, clause 5.3.17.5` —
+  because the legacy kinds keep their prefixes;
+- an existing caller passing `section=`/`clause=` still works.
+
+Both are pinned by test, including a hand-written pre-change document decoded
+through `from_document`.
+
+#### 8.5.4 Worked examples
+
+An ICAO taxiway centre line provision, to full depth:
+
+```python
+library.cite(
+    amendment_17.revision_id,
+    location=[
+        LocatorPart(LocatorKind.CHAPTER, "5"),
+        LocatorPart(LocatorKind.SECTION, "5.3"),
+        LocatorPart(LocatorKind.SUBSECTION, "5.3.17"),
+        LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5"),
+    ],
+    criterion_id="AGL-C-1",
+)
+# ICAO Annex 14 Vol I, 8th Edition, Rev Amendment 17,
+# Chapter 5, §5.3, §5.3.17, para. 5.3.17.5
+```
+
+The same provision cited at the granularity ICAO itself uses, which is equally
+valid and shorter:
+
+```python
+library.cite(
+    amendment_17.revision_id,
+    location=[LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5")],
+)
+```
+
+A UAE GCAA regulation, where the nesting is a Subpart:
+
+```python
+library.cite(
+    car_part_ix_revision_id,
+    location=[
+        LocatorPart(LocatorKind.PART, "IX"),
+        LocatorPart(LocatorKind.OTHER, "Subpart 3"),
+        LocatorPart(LocatorKind.PARAGRAPH, "9.3.5"),
+    ],
+)
+```
+
+A structure that does not decompose at all:
+
+```python
+library.cite(
+    cs_adr_dsn_revision_id,
+    location=[
+        LocatorPart(LocatorKind.OTHER, "CS ADR-DSN.M.615"),
+        LocatorPart(LocatorKind.ITEM, "(a)"),
+    ],
+)
+```
+
+None of these states an engineering value. They locate text; what the text
+*requires* is the criteria module of §16.
+
+#### 8.5.5 Volume and Part are usually a document, not a locator
+
+ICAO publishes Annex 14 Volume I and Volume II separately, each with its own
+edition and its own amendment sequence; Doc 9157 Part 4 and Part 6 likewise.
+Those are therefore **separate `ReferenceDocument` records**, not a locator
+within a shared one — which is what lets each carry the effective dates and
+supersession that §10 depends on. `LocatorKind.VOLUME` and `PART` exist for
+the other case: a single publication with internal parts that are amended
+together.
+
+A known limitation: the catalogue key is the document number as typed, so
+`Annex 14 Vol I` and `Annex 14 Volume I` are two catalogue entries. §10.1
+catches an exact re-registration, not a re-spelling. Normalising publication
+names is an operator-discipline matter, and inventing an abbreviation table
+would guess at names AET has not been given.
 
 ## 9. Applicability
 
@@ -336,7 +466,7 @@ its provenance from the library, and emits findings carrying both:
 ```text
 Rule       agl.spacing
 Finding    Taxiway edge-light spacing exceeds the configured criterion
-Reference  ICAO Annex 14 Vol I, 8th Edition, Rev Amendment 17, clause 5.3.17.5
+Reference  ICAO Annex 14 Vol I, 8th Edition, Rev Amendment 17, para. 5.3.17.5
 Evidence   samples: TEC102-01/067, …
 Project    <project id>
 ```
@@ -349,7 +479,9 @@ is the only way to build one, and the citation is assembled from stored
 records so it cannot claim an edition or revision the catalogue does not hold.
 
 `ReferenceCitation.criterion_id` is the slot the controlled criteria module
-will fill.
+will fill, and `location` (§8.5) is how that module will say which text
+defines the criterion — to the depth the publisher's own structure has,
+without the citation ever stating what the criterion requires.
 
 ### 13.2 The report
 
@@ -426,7 +558,7 @@ would mean holding copies, which §11.1 exists to avoid.
 | A restricted document is committed to the repository. | ADR-003 and `docs/Reference/.gitignore`; AET never copies a document. |
 | A licence is recorded permissively by mistake. | `redistributable` requires three independent fields to agree, and defaults refuse. |
 | Applicability is under-specified, so the wrong standard is cited. | `UNDETERMINED` is a distinct verdict and is never treated as applicable. |
-| The criteria module arrives with a shape the citation cannot express. | The citation records identity and location only — reference, edition, revision, section, clause, criterion id — which any criterion representation can be keyed by. |
+| The criteria module arrives with a shape the citation cannot express. | The citation records identity and location only, and location is an ordered path of labelled parts to arbitrary depth (§8.5) rather than a fixed column set — so an authority AET has not seen is a new `LocatorKind`, or `OTHER`, not a schema change. |
 | Reference metadata drifts from a criterion that cites it. | Records are refused, never overwritten (§10.1); findings hold citations by value (§10.3). |
 
 ## 19. Future Extensions
@@ -465,8 +597,13 @@ SDS-016 is satisfied when:
 9. Reference records persist through the existing SQLite store and survive
    process exit, including their dates, applicability, and source.
 10. A validation finding carries a citation naming reference, edition,
-    revision, section, and clause, and amending the library afterwards does
-    not change it.
-11. No engineering limit, criterion, or regulatory value is shipped.
-12. All behavior above is covered by tests; `pytest`, `ruff`, `black`, and
+    revision, and the location within it, and amending the library afterwards
+    does not change it.
+11. A citation locates a provision to the depth the publisher uses, in
+    containment order, including structures that do not decompose into
+    chapter and section; it refuses to state its location two ways at once;
+    and a citation stored before the locator path existed reads back and
+    renders unchanged.
+12. No engineering limit, criterion, or regulatory value is shipped.
+13. All behavior above is covered by tests; `pytest`, `ruff`, `black`, and
     `mypy` pass.

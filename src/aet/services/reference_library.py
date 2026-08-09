@@ -24,15 +24,16 @@ SDS-016 §13.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 
-from aet.core.errors import WorkflowError
+from aet.core.errors import InputError, WorkflowError
 from aet.core.logging import StructuredLogger, get_logger
 from aet.core.outcome import Outcome
 from aet.models.reference import (
     ApplicabilityDimension,
     ApplicabilityVerdict,
+    LocatorPart,
     ReferenceCitation,
     ReferenceDocument,
     ReferenceEdition,
@@ -411,6 +412,7 @@ class ReferenceLibrary:
         self,
         revision_id: str,
         *,
+        location: Sequence[LocatorPart] | None = None,
         section: str = "",
         clause: str = "",
         criterion_id: str = "",
@@ -422,6 +424,11 @@ class ReferenceLibrary:
         catalogue does not hold. A superseded revision may be cited — a
         historical run cited what was in force at the time, and re-stating it
         later must stay possible.
+
+        ``location`` is the ordered locator path (SDS-016 §8.5);
+        ``section``/``clause`` is the two-level shorthand. Supplying both is a
+        failed outcome rather than a raised error, because every other way
+        this method can be wrong is one too.
         """
         correlation_id = new_id()
         revision = self._repos.reference_revisions.get(revision_id)
@@ -445,8 +452,8 @@ class ReferenceLibrary:
                 "Catalogue the reference document the revision belongs to.",
                 correlation_id,
             )
-        return Outcome.ok(
-            ReferenceCitation(
+        try:
+            citation = ReferenceCitation(
                 reference_id=document.reference_id,
                 document_number=document.document_number,
                 authority=document.authority,
@@ -456,9 +463,17 @@ class ReferenceLibrary:
                 section=section,
                 clause=clause,
                 criterion_id=criterion_id,
-            ),
-            correlation_id=correlation_id,
-        )
+                location=tuple(location or ()),
+            )
+        except InputError as error:
+            self._logger.error(
+                str(error),
+                operation="cite-reference",
+                correlation_id=correlation_id,
+                error_code=error.code,
+            )
+            return Outcome.from_error(error, correlation_id=correlation_id)
+        return Outcome.ok(citation, correlation_id=correlation_id)
 
     def evaluate_applicability(
         self,

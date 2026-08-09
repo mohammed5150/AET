@@ -105,6 +105,30 @@ library.register_revision(
 )
 ```
 
+## Citing a clause
+
+A citation locates the text through an ordered path, to whatever depth the
+publisher's own structure has:
+
+```python
+from aet.models.reference import LocatorKind, LocatorPart
+
+library.cite(
+    amendment_17_revision_id,
+    location=[
+        LocatorPart(LocatorKind.CHAPTER, "5"),
+        LocatorPart(LocatorKind.SUBSECTION, "5.3.17"),
+        LocatorPart(LocatorKind.PARAGRAPH, "5.3.17.5"),
+    ],
+)
+```
+
+Use `LocatorKind.OTHER` for a locator whose form none of the kinds describes —
+an EASA rule reference such as `CS ADR-DSN.M.615`, or a GCAA Subpart. Record
+the value exactly as the publisher prints it. The shorthand
+`cite(..., section=..., clause=...)` remains valid for the simple two-level
+case, but a citation states its location one way or the other, never both.
+
 Editions and revisions are recorded as the publisher states them. AET does not
 verify that a revision is still current — that requires consulting the
 publisher, and a filename that looks current is not evidence that a document

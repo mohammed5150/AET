@@ -416,6 +416,77 @@ class ReferenceRevision:
         )
 
 
+class LocatorKind(StrEnum):
+    """What a component of a citation's location refers to (SDS-016 §8.5).
+
+    Deliberately a *kind on an ordered part* rather than one field per level.
+    Publishers do not share a hierarchy: ICAO numbers a provision
+    ``5.3.17.5``, EASA writes ``ADR.DSN.M.615(a)``, a GCAA regulation nests a
+    paragraph under a Subpart, and a manufacturer's manual has parts and
+    tables. Fixed ``chapter``/``subsection``/``paragraph`` columns would fit
+    the first and misrepresent the rest, so the depth and the vocabulary are
+    both the operator's to choose.
+    """
+
+    VOLUME = "volume"
+    PART = "part"
+    CHAPTER = "chapter"
+    SECTION = "section"
+    SUBSECTION = "subsection"
+    PARAGRAPH = "paragraph"
+    CLAUSE = "clause"
+    ITEM = "item"
+    TABLE = "table"
+    FIGURE = "figure"
+    APPENDIX = "appendix"
+    ATTACHMENT = "attachment"
+    #: A locator an authority states in a form none of the above describes.
+    OTHER = "other"
+
+    @property
+    def prefix(self) -> str:
+        """How this kind is written in a rendered citation."""
+        return _LOCATOR_PREFIXES[self]
+
+
+_LOCATOR_PREFIXES: dict[LocatorKind, str] = {
+    LocatorKind.VOLUME: "Volume ",
+    LocatorKind.PART: "Part ",
+    LocatorKind.CHAPTER: "Chapter ",
+    LocatorKind.SECTION: "§",
+    LocatorKind.SUBSECTION: "§",
+    LocatorKind.PARAGRAPH: "para. ",
+    LocatorKind.CLAUSE: "clause ",
+    LocatorKind.ITEM: "item ",
+    LocatorKind.TABLE: "Table ",
+    LocatorKind.FIGURE: "Figure ",
+    LocatorKind.APPENDIX: "Appendix ",
+    LocatorKind.ATTACHMENT: "Attachment ",
+    LocatorKind.OTHER: "",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class LocatorPart:
+    """One labelled component of a location within a revision."""
+
+    kind: LocatorKind
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.value.strip():
+            raise InputError(
+                f"A {self.kind} locator states no value",
+                remediation=(
+                    "Give the locator the value the publisher prints, or omit "
+                    "the part."
+                ),
+            )
+
+    def __str__(self) -> str:
+        return f"{self.kind.prefix}{self.value.strip()}"
+
+
 @dataclass(frozen=True, slots=True)
 class ReferenceCitation:
     """An immutable pointer to the exact text a finding relies on.
@@ -426,6 +497,12 @@ class ReferenceCitation:
     SDS-016 §10.3. It records identity and location only: whether the cited
     clause is mandatory is a property of the document and, for a ``MIXED``
     publication, of the clause, so the citation resolves rather than asserts it.
+
+    Location is stated as ``location``, an ordered path of labelled parts, to
+    whatever depth the publisher's own structure has (SDS-016 §8.5).
+    ``section`` and ``clause`` are the two-level shorthand that predates it and
+    the form already-stored citations carry; they remain readable and citable,
+    but a citation states its location one way or the other, never both.
     """
 
     reference_id: str
@@ -439,6 +516,45 @@ class ReferenceCitation:
     #: Identifier of the controlled criterion this citation supports, once a
     #: criteria module exists to define one (SDS-016 §13.1).
     criterion_id: str = ""
+    #: The general form: an ordered path from the outermost division to the
+    #: exact provision. Appended after the earlier fields so a citation stored
+    #: before it existed keeps its positional meaning.
+    location: tuple[LocatorPart, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Refuse a citation that states its location twice.
+
+        Two ways of saying where the text is would let one finding cite
+        ``clause 5.3.17.5`` and another the same provision as a locator path,
+        leaving two unequal value objects pointing at one clause. Which is the
+        ambiguity the ordered path exists to remove (SDS-016 §8.5.2).
+        """
+        if self.location and (self.section or self.clause):
+            raise InputError(
+                "A citation states its location as an ordered locator path or "
+                "as section/clause, not both",
+                remediation=(
+                    "Move the section and clause into the locator path as "
+                    "LocatorPart entries, or drop the path."
+                ),
+            )
+
+    @property
+    def resolved_location(self) -> tuple[LocatorPart, ...]:
+        """The location as one ordered path, whichever form recorded it.
+
+        The single accessor every reader uses, so a citation written before
+        the path existed and one written after are read, rendered, and
+        compared the same way.
+        """
+        if self.location:
+            return self.location
+        legacy = []
+        if self.section:
+            legacy.append(LocatorPart(LocatorKind.SECTION, self.section))
+        if self.clause:
+            legacy.append(LocatorPart(LocatorKind.CLAUSE, self.clause))
+        return tuple(legacy)
 
     def __str__(self) -> str:
         """The citation as it appears in a report."""
@@ -446,8 +562,5 @@ class ReferenceCitation:
         parts.append(self.edition)
         if self.revision:
             parts.append(f"Rev {self.revision}")
-        if self.section:
-            parts.append(f"§{self.section}")
-        if self.clause:
-            parts.append(f"clause {self.clause}")
+        parts.extend(str(part) for part in self.resolved_location)
         return ", ".join(part for part in parts if part)
