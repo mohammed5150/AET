@@ -32,6 +32,25 @@ def test_distance_across_utm_zones_is_a_processing_error():
     assert raised.value.remediation
 
 
+@pytest.mark.parametrize(
+    ("first_zone", "second_zone"),
+    [
+        ("40 N", "40N"),
+        ("40N", "40n"),
+        ("40 N", "40n"),
+        ("40N", " 40N "),
+    ],
+)
+def test_distance_treats_equivalently_formatted_zones_as_the_same_zone(
+    first_zone, second_zone
+):
+    # Different sources format the same zone differently; the comparison
+    # must not raise a cross-zone error between them (SDS-009 §5.2).
+    start = Coordinate(easting=261000.0, northing=2703000.0, zone=first_zone)
+    end = Coordinate(easting=261030.0, northing=2703040.0, zone=second_zone)
+    assert start.distance_to(end) == pytest.approx(50.0)
+
+
 def test_distance_allows_an_unknown_zone_on_either_side():
     start = Coordinate(easting=0.0, northing=0.0)
     end = Coordinate(easting=3.0, northing=4.0, zone="40 N")

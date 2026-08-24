@@ -28,9 +28,16 @@ class Coordinate:
 
         A distance between two different UTM zones has no meaning, so a
         cross-zone measurement raises rather than returning a number that
-        looks usable (SDS-009 §5.2).
+        looks usable (SDS-009 §5.2). Zones are compared after folding away
+        case and whitespace, so "40 N", "40N", and "40n" — the same zone
+        written by different sources — are recognised as one zone rather
+        than raising a false cross-zone error.
         """
-        if self.zone and other.zone and self.zone != other.zone:
+        if (
+            self.zone
+            and other.zone
+            and _normalized_zone(self.zone) != _normalized_zone(other.zone)
+        ):
             raise ProcessingError(
                 f"Cannot measure a distance between UTM zones "
                 f"'{self.zone}' and '{other.zone}'",
@@ -61,6 +68,17 @@ def parse_coordinate(
         zone="" if zone is None else str(zone).strip(),
         elevation=_number(elevation),
     )
+
+
+def _normalized_zone(zone: str) -> str:
+    """Fold a UTM zone designator to a canonical form for comparison.
+
+    Zone text reaches a coordinate from different sources — a registry
+    export, a CLI/config option — that format the same zone differently
+    (internal whitespace, letter case). The raw string is left untouched
+    everywhere else; only this comparison needs to treat them as equal.
+    """
+    return "".join(zone.split()).upper()
 
 
 def _number(value: object) -> float | None:
