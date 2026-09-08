@@ -75,6 +75,15 @@ comparing across zones would report confident nonsense. An unknown zone
 (`""`) on either side is permitted, so coordinates of unstated provenance
 remain measurable.
 
+Zones are compared after folding away case and internal whitespace, so
+`"40 N"`, `"40N"`, and `"40n"` — the same zone as written by a registry
+export, a CLI option, or a different operator — are recognised as one zone.
+Without this, two coordinates in the same real zone but differently
+formatted would spuriously fail as "different zones", degrading spacing
+validation (SDS-012 §5.2) to "not comparable" for assets that are, in fact,
+adjacent. The stored `zone` string itself is unchanged by this — only the
+comparison is normalized — so raw provenance is still preserved.
+
 ### 5.3 Parsing
 
 `parse_coordinate` builds a coordinate from survey values of any type and
@@ -119,12 +128,15 @@ SDS-009 is satisfied when:
    is unknown, is the planar distance in metres and ignores elevation.
 3. Distance across two different known zones raises `PROCESSING_ERROR` with
    remediation.
-4. Parsing accepts survey text and numbers, and returns `None` when either
+4. Distance between two coordinates in the *same* zone written with
+   different case or whitespace (e.g. `"40 N"` vs `"40N"`) succeeds rather
+   than raising a cross-zone error.
+5. Parsing accepts survey text and numbers, and returns `None` when either
    ordinate is missing, blank, non-numeric, or non-finite.
-5. Parsing keeps a known planar position when only the elevation is
+6. Parsing keeps a known planar position when only the elevation is
    unusable.
-6. A registry row with unusable ordinates is imported with `location` unset,
+7. A registry row with unusable ordinates is imported with `location` unset,
    its raw values preserved, and a WARN record naming the row.
-7. `agl.asset.location` flags exactly the assets with no coordinate.
-8. All behavior above is covered by tests; `pytest`, `ruff`, and `black`
+8. `agl.asset.location` flags exactly the assets with no coordinate.
+9. All behavior above is covered by tests; `pytest`, `ruff`, and `black`
    pass.
