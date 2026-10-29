@@ -3,6 +3,12 @@
 This file provides context and rules for AI agents (e.g., GitHub Copilot,
 Codex, Claude) working in this repository.
 
+Before starting work, read [knowledge-base/INDEX.md](knowledge-base/INDEX.md)
+and the latest entries in
+[knowledge-base/WORKLOG.md](knowledge-base/WORKLOG.md). Before finishing,
+follow the session routine in
+[knowledge-base/topics/orientation/session-protocol.md](knowledge-base/topics/orientation/session-protocol.md).
+
 ---
 
 ## Project Overview
@@ -14,24 +20,26 @@ rules, and produces auditable engineering reports.
 
 The architecture is a **layered modular monolith** with a plugin-ready
 boundary. See [SDS-002](docs/SDS/SDS-002-System-Architecture.md) for the full
-architecture specification and [ADR-001](docs/ADR/ADR-001-sds-002-package-mapping.md)
-for the mapping between SDS-002 module names and the actual package layout.
+architecture specification, [ADR-001](docs/ADR/ADR-001-sds-002-package-mapping.md)
+for the mapping between SDS-002 module names and the package layout, and
+[ADR-002](docs/ADR/ADR-002-src-layout.md) for the `src/` layout.
 
 ---
 
 ## Repository Layout
 
 ```
-app/                  # Application source (the only installed package)
+src/aet/              # Application source (the only installed package)
 ├── core/             # Cross-cutting infrastructure
 │   ├── config.py     # AppConfig and PLUGIN_API_VERSION constant
+│   ├── discovery.py  # Plugin discovery from disk and entry points (SDS-014)
 │   ├── errors.py     # AETError hierarchy (InputError, ProcessingError, …)
 │   ├── logging.py    # StructuredLogger + get_logger()
 │   ├── outcome.py    # Outcome[T] — the universal processing result type
 │   └── plugins.py    # Plugin / PluginRuntime contracts
 ├── models/           # Domain entities and value objects
 ├── modules/          # Feature engines
-│   ├── ingestion/    # DWG/file ingestion
+│   ├── ingestion/
 │   ├── drawing_engine/
 │   ├── asset_engine/
 │   ├── validation_engine/
@@ -39,16 +47,25 @@ app/                  # Application source (the only installed package)
 ├── services/         # Use-case orchestration and persistence
 │   ├── use_cases.py
 │   ├── pipeline.py
-│   └── persistence.py
-└── ui/               # CLI entry-point (app.ui.cli:main → `aet` command)
+│   ├── persistence.py
+│   ├── sqlite.py
+│   ├── serialization.py
+│   └── reference_library.py
+├── ui/               # CLI entry-point (aet.ui.cli:main → `aet` command)
+├── utils/            # Hashing and identifier helpers
+└── resources/        # Static resources and data files
 
 docs/
 ├── SDS/              # Software Design Specifications
 ├── ADR/              # Architecture Decision Records
-├── standards/        # Coding and commit-message standards
+├── Standards/        # Coding and engineering standards
+├── standards/        # Commit-message standard
+├── Reference/        # How AET refers to authoritative references
 └── roadmap/
 
-tests/                # pytest suite — mirrors app/ structure
+knowledge-base/       # Agent knowledge base: repo map, lessons, worklog
+
+tests/                # pytest suite — mirrors src/aet/ structure
 ├── core/
 ├── models/
 ├── modules/
@@ -57,7 +74,7 @@ tests/                # pytest suite — mirrors app/ structure
 └── integration/
 
 config/               # Runtime configuration files
-scripts/              # Build and utility scripts
+scripts/              # Build and utility scripts (check.sh runs the CI gate)
 examples/             # End-to-end usage demos
 output/               # Generated outputs (git-ignored)
 logs/                 # Log files (git-ignored)
@@ -65,7 +82,7 @@ logs/                 # Log files (git-ignored)
 
 **Dependency direction (enforced by convention, not tooling):**
 `ui → services → models`; engines depend only on `models` and `core`;
-plugins depend only on `app.core.plugins` contracts.
+plugins depend only on `aet.core.plugins` contracts.
 
 ---
 
@@ -74,9 +91,12 @@ plugins depend only on `app.core.plugins` contracts.
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
+
+`pyproject.toml` is the single source of truth for dependencies; there is no
+requirements file. The editable install is required: the `src/` layout means a
+bare checkout has no importable copy of the package (ADR-002).
 
 Minimum Python version: **3.12** (uses PEP 695 generics, `StrEnum`, `slots=True`).
 
@@ -86,14 +106,16 @@ Minimum Python version: **3.12** (uses PEP 695 generics, `StrEnum`, `slots=True`
 
 | Purpose | Command |
 |---|---|
+| Run the full CI gate locally | `scripts/check.sh` |
 | Run all tests | `pytest` |
-| Run tests with coverage | `pytest --cov=app` |
+| Run tests with coverage | `pytest --cov=aet` |
 | Format code | `black .` |
 | Lint | `ruff check .` |
 | Lint + auto-fix | `ruff check --fix .` |
-| Run the CLI | `aet run --name "Demo" path/to/drawing.dwg` |
+| Type-check | `mypy` |
+| Run the CLI | `aet run --name "Demo" path/to/drawing.dxf` |
 
-Always run `black .` and `ruff check .` before committing code changes.
+Run `scripts/check.sh` before committing. It runs the same steps as CI.
 
 ---
 
@@ -102,8 +124,10 @@ Always run `black .` and `ruff check .` before committing code changes.
 ### Formatting & Linting
 
 - **Black** — line length 88, target Python 3.12.
-- **Ruff** — rules: `E`, `W`, `F` (pyflakes), `I` (isort), `N` (pep8-naming),
-  `UP` (pyupgrade). Fix all Ruff warnings before committing.
+- **Ruff** — the rule set in `pyproject.toml` (`E`, `W`, `F`, `I`, `N`, `UP`,
+  `B`, `BLE`, `S`, `C4`, `SIM`, `PTH`, `PT`, `RET`, `RUF`). Fix all Ruff
+  warnings before committing.
+- **mypy** — `strict` over `src` and `tests`.
 - Use `from __future__ import annotations` in every module.
 - Prefer `dataclasses.dataclass(frozen=True, slots=True)` for value objects.
 
@@ -113,7 +137,7 @@ Always run `black .` and `ruff check .` before committing code changes.
   failures in an `Outcome.fail(...)` return value instead.
 - For unexpected system errors, let ordinary exceptions propagate so they are
   distinguishable from domain errors.
-- Use the `AETError` subclass hierarchy in `app.core.errors`:
+- Use the `AETError` subclass hierarchy in `aet.core.errors`:
   - `InputError` — bad inputs / unsupported formats
   - `ProcessingError` — parsing / transformation failures
   - `RuleError` — validation rule failures
@@ -126,7 +150,7 @@ Every processing step **must return `Outcome[T]`**, never raise across the
 module boundary:
 
 ```python
-from app.core.outcome import Outcome
+from aet.core.outcome import Outcome
 
 def process(...) -> Outcome[MyResult]:
     try:
@@ -138,11 +162,11 @@ def process(...) -> Outcome[MyResult]:
 
 ### Logging
 
-Use `get_logger(name)` from `app.core.logging` — never `print()` or
+Use `get_logger(name)` from `aet.core.logging` — never `print()` or
 `logging.getLogger()` directly:
 
 ```python
-from app.core.logging import get_logger
+from aet.core.logging import get_logger
 logger = get_logger("my-module")
 logger.info("message", key=value)       # structured fields
 logger.audit("...", operation="...")    # audit-trail events
@@ -150,22 +174,32 @@ logger.audit("...", operation="...")    # audit-trail events
 
 ### Plugins
 
-New plugins must subclass `app.core.plugins.Plugin`, provide a valid
+New plugins must subclass `aet.core.plugins.Plugin`, provide a valid
 `PluginManifest`, and be registered through `PluginRuntime.register()`.
-Plugins may **not** import anything outside `app.core.plugins`, `app.core.config`,
-and `app.core.logging`.
+Plugins may **not** import anything outside `aet.core.plugins`, `aet.core.config`,
+and `aet.core.logging`.
+
+### Engineering limits
+
+No regulatory or engineering limit is shipped as a default
+([SDS-012](docs/SDS/SDS-012-AGL-Engineering-Rules.md) §4). Never hardcode a
+spacing, loading or photometric value from memory. Criteria belong to the
+controlled module that SDS-016 §16 defers, and AET records where a reference
+document is without holding it ([ADR-003](docs/ADR/ADR-003-controlled-reference-documents.md)).
 
 ---
 
 ## Testing
 
-- Tests live under `tests/` and mirror the `app/` package structure.
+- Tests live under `tests/` and mirror the `src/aet/` package structure.
 - Integration tests go in `tests/integration/`.
 - Test files are named `test_*.py`; test functions are named `test_*`.
 - Do not delete or weaken existing tests. Add new tests for every behaviour
   change and for bug fixes.
 - Aim for unit tests that test a single function/class in isolation;
   use fixtures for shared setup.
+- `tests/test_knowledge_base.py` checks the knowledge base structure. Keep it
+  passing when you add or rename notes.
 
 ---
 
@@ -199,12 +233,11 @@ Fixes #42
 
 ## Branch Strategy
 
-| Branch | Purpose |
-|---|---|
-| `main` | Production-ready code |
-| `develop` | Integration branch — PRs target here |
-| `feature/*` | New features (branch from `develop`) |
-| `fix/*` | Bug fixes (branch from `develop`) |
+`main` holds production-ready code. It is the base for every branch and the
+target of every pull request; there is no integration branch. Branch names
+carry a type prefix (`feature/`, `fix/`, `refactor/`, `docs/`, `ci/`,
+`chore/`) and a kebab-case description of the work. Full rules:
+[CONTRIBUTING](CONTRIBUTING.md#branch-strategy).
 
 ---
 
@@ -212,12 +245,12 @@ Fixes #42
 
 Before opening a PR ensure:
 
-1. `black .` passes with no changes.
-2. `ruff check .` reports no errors.
-3. `pytest` passes with no failures.
-4. New behaviour is covered by tests.
-5. Commit messages follow Conventional Commits.
-6. Documentation updated if public interfaces changed.
+1. `scripts/check.sh` passes (ruff, black, mypy, pytest, CLI entry point).
+2. New behaviour is covered by tests.
+3. Commit messages follow Conventional Commits.
+4. Documentation updated if public interfaces changed.
+5. `knowledge-base/WORKLOG.md` has an entry for the session, and any new
+   lesson is recorded as a note.
 
 ---
 
@@ -235,7 +268,7 @@ When generating or modifying code, respect these invariants:
    failure and return a failed `Outcome` with a machine-readable `error_code`.
 4. **Plugin isolation** — plugins are activated through `PluginRuntime` only.
    Activation failures must be quarantined, not re-raised.
-5. **Structured logging** — always use `get_logger` from `app.core.logging`.
+5. **Structured logging** — always use `get_logger` from `aet.core.logging`.
    Never use `print()` in production code paths.
 6. **Python 3.12 features are encouraged** — use `X | Y` union syntax,
    `type` aliases, `slots=True`, `StrEnum`, etc.
